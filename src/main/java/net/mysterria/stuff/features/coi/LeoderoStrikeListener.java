@@ -5,6 +5,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.mysterria.stuff.MysterriaStuff;
+import org.bukkit.GameMode;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -37,6 +38,10 @@ public class LeoderoStrikeListener implements Listener {
         Player player = event.getPlayer();
 
         if (player.getWorld().getEnvironment() != World.Environment.NORMAL) {
+            return;
+        }
+
+        if (player.getGameMode() != GameMode.SURVIVAL) {
             return;
         }
 
