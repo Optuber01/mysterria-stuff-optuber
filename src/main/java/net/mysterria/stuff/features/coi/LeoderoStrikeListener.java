@@ -22,6 +22,7 @@ public class LeoderoStrikeListener implements Listener {
     private static final long BASE_COOLDOWN_TIME = 20000;
     private static final long MAX_COOLDOWN_TIME = 120000;
     private static final long COOLDOWN_RESET_TIME = 60000;
+
     private final MysterriaStuff plugin;
     private final Map<UUID, Long> cooldowns;
     private final Map<UUID, Integer> usageCount;
@@ -42,6 +43,10 @@ public class LeoderoStrikeListener implements Listener {
         }
 
         if (player.getGameMode() != GameMode.SURVIVAL) {
+            return;
+        }
+
+        if (!player.getWorld().getName().equals("world")) {
             return;
         }
 
