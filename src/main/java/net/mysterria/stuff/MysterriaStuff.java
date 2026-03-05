@@ -8,9 +8,15 @@ import net.mysterria.stuff.features.battlepass.NetheriteElytraBlocker;
 import net.mysterria.stuff.features.chatcontrol.ChatControlMessageManager;
 import net.mysterria.stuff.features.chatcontrol.ChatControlSessionHandler;
 import net.mysterria.stuff.features.chatcontrol.ChatControlTokenListener;
+import net.mysterria.stuff.features.coi.AmanisesListener;
+import net.mysterria.stuff.features.coi.AucusesListener;
 import net.mysterria.stuff.features.coi.BoosterPatriarchListener;
+import net.mysterria.stuff.features.coi.CheekListener;
 import net.mysterria.stuff.features.coi.DangerousActionsListener;
+import net.mysterria.stuff.features.coi.HerabergenListener;
 import net.mysterria.stuff.features.coi.LeoderoStrikeListener;
+import net.mysterria.stuff.features.coi.LilithListener;
+import net.mysterria.stuff.features.coi.StianoListener;
 import net.mysterria.stuff.features.hmcwraps.UniversalTokenManager;
 import net.mysterria.stuff.features.hmcwraps.listener.UniversalTokenListener;
 import net.mysterria.stuff.features.hmcwraps.listener.WrapPreviewListener;
@@ -75,6 +81,12 @@ public final class MysterriaStuff extends JavaPlugin {
         if (configManager.isCoiProtectionEnabled()) {
             getServer().getPluginManager().registerEvents(new DangerousActionsListener(), this);
             getServer().getPluginManager().registerEvents(new LeoderoStrikeListener(this), this);
+            getServer().getPluginManager().registerEvents(new AmanisesListener(this), this);
+            getServer().getPluginManager().registerEvents(new AucusesListener(this), this);
+            getServer().getPluginManager().registerEvents(new HerabergenListener(this), this);
+            getServer().getPluginManager().registerEvents(new CheekListener(this), this);
+            getServer().getPluginManager().registerEvents(new LilithListener(this), this);
+            getServer().getPluginManager().registerEvents(new StianoListener(this), this);
             PrettyLogger.feature("CoI Dangerous Actions Listener");
         }
 
