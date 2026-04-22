@@ -64,6 +64,39 @@ coi-protection:
   nightmare-keep-inventory: true
 
 # ═══════════════════════════════════════════════════════════════
+# CoI Name Zones
+# ═══════════════════════════════════════════════════════════════
+
+# When enabled, CoI names only respond to players inside a defined zone.
+# Players in a zone get per-player night time and periodic atmospheric lightning.
+# If enabled is false or zones list is empty, names work anywhere in the main world.
+
+coi-zones:
+  enabled: false
+  zones: []
+  # zones:
+  #   - name: "ancient-sanctum"
+  #     world: "world"
+  #     min-y: 60
+  #     max-y: 120
+  #     # At least 3 XZ vertices define the polygon shape of the zone.
+  #     # Any convex or concave polygon is supported.
+  #     vertices:
+  #       - { x: -100, z: -100 }
+  #       - { x:  100, z: -150 }
+  #       - { x:  150, z:   50 }
+  #       - { x:    0, z:  120 }
+  #       - { x: -120, z:   30 }
+  #     # Force perpetual night for the player while inside (per-player, not server-wide)
+  #     always-night: true
+  #     # Strike lightning effects near the player periodically
+  #     lightning-effects: true
+  #     # How often to strike (in ticks, 20 ticks = 1 second)
+  #     lightning-interval-ticks: 100
+  #     # Maximum distance from the player a lightning bolt can spawn
+  #     lightning-radius: 30
+
+# ═══════════════════════════════════════════════════════════════
 # Booster Patriarch Settings
 # ═══════════════════════════════════════════════════════════════
 

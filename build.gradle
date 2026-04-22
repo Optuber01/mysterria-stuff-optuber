@@ -1,11 +1,11 @@
 plugins {
     id 'java'
-    id("xyz.jpenilla.run-paper") version "2.3.1"
-    id("com.gradleup.shadow") version "8.3.3"
+    id('com.gradleup.shadow') version '9.4.1'
+    id 'xyz.jpenilla.run-paper' version "3.0.2"
 }
 
 group = 'net.mysterria.stuff'
-version = '1.0.0'
+version = '1.1.0'
 
 repositories {
     mavenCentral()
@@ -26,11 +26,7 @@ tasks.build.dependsOn(shadowJar)
 dependencies {
     implementation("dev.triumphteam:triumph-gui-paper:3.1.13")
     compileOnly("de.skyslycer.hmcwraps:api:1.7.0")
-    compileOnly("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
-}
-
-shadowJar {
-    relocate("dev.triumphteam.gui", "net.mysterria.gui")
+    compileOnly("io.papermc.paper:paper-api:26.1.2.build.+")
 }
 
 tasks {
@@ -42,7 +38,7 @@ tasks {
     }
 }
 
-def targetJavaVersion = 21
+def targetJavaVersion = 25
 java {
     def javaVersion = JavaVersion.toVersion(targetJavaVersion)
     sourceCompatibility = javaVersion

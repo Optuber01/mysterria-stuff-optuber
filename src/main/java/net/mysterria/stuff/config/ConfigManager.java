@@ -1,8 +1,13 @@
 package net.mysterria.stuff.config;
 
 import net.mysterria.stuff.MysterriaStuff;
+import net.mysterria.stuff.features.zones.CoiZone;
 import net.mysterria.stuff.utils.PrettyLogger;
 import org.bukkit.configuration.file.FileConfiguration;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 
 public class ConfigManager {
@@ -97,6 +102,62 @@ public class ConfigManager {
 
     public boolean isNightmareKeepInventory() {
         return config.getBoolean("coi-protection.nightmare-keep-inventory", true);
+    }
+
+    public boolean isCoiZonesEnabled() {
+        return config.getBoolean("coi-zones.enabled", false);
+    }
+
+    public List<CoiZone> getCoiZones() {
+        List<CoiZone> result = new ArrayList<>();
+        if (!isCoiZonesEnabled()) return result;
+        List<Map<?, ?>> zoneList = config.getMapList("coi-zones.zones");
+        for (Map<?, ?> raw : zoneList) {
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> map = (Map<String, Object>) raw;
+                String name = (String) map.get("name");
+                String world = map.containsKey("world") ? (String) map.get("world") : "world";
+                int minY = toInt(map.get("min-y"));
+                int maxY = toInt(map.get("max-y"));
+
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> vertexList = (List<Map<String, Object>>) map.get("vertices");
+                if (vertexList == null || vertexList.size() < 3) {
+                    PrettyLogger.warn("CoI zone '" + name + "' needs at least 3 vertices — skipping");
+                    continue;
+                }
+                List<double[]> vertices = new ArrayList<>();
+                for (Map<String, Object> v : vertexList) {
+                    vertices.add(new double[]{toDouble(v.get("x")), toDouble(v.get("z"))});
+                }
+
+                boolean alwaysNight = map.containsKey("always-night") && toBoolean(map.get("always-night"));
+                boolean lightning = map.containsKey("lightning-effects") && toBoolean(map.get("lightning-effects"));
+                int lightningInterval = map.containsKey("lightning-interval-ticks") ? toInt(map.get("lightning-interval-ticks")) : 100;
+                int lightningRadius = map.containsKey("lightning-radius") ? toInt(map.get("lightning-radius")) : 30;
+                result.add(new CoiZone(name, world, minY, maxY, vertices,
+                        alwaysNight, lightning, lightningInterval, lightningRadius));
+            } catch (Exception e) {
+                PrettyLogger.warn("Failed to load CoI zone: " + e.getMessage());
+            }
+        }
+        return result;
+    }
+
+    private int toInt(Object value) {
+        if (value instanceof Number num) return num.intValue();
+        return Integer.parseInt(String.valueOf(value));
+    }
+
+    private double toDouble(Object value) {
+        if (value instanceof Number num) return num.doubleValue();
+        return Double.parseDouble(String.valueOf(value));
+    }
+
+    private boolean toBoolean(Object value) {
+        if (value instanceof Boolean b) return b;
+        return Boolean.parseBoolean(String.valueOf(value));
     }
 
 

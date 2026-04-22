@@ -5,6 +5,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.mysterria.stuff.MysterriaStuff;
+import net.mysterria.stuff.features.zones.CoiZoneManager;
 import org.bukkit.Color;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
@@ -51,6 +52,9 @@ public class LilithListener implements Listener {
         if (player.getWorld().getEnvironment() != World.Environment.NORMAL) return;
         if (player.getGameMode() != GameMode.SURVIVAL) return;
         if (!player.getWorld().getName().equals("world")) return;
+
+        CoiZoneManager zoneManager = plugin.getCoiZoneManager();
+        if (zoneManager != null && zoneManager.isEnabled() && !zoneManager.isInAnyZone(player.getUniqueId())) return;
 
         String serializedMessage = LegacyComponentSerializer.legacyAmpersand().serialize(event.message());
         String lowerMessage = serializedMessage.toLowerCase();

@@ -12,6 +12,7 @@ import net.mysterria.stuff.features.coi.AmanisesListener;
 import net.mysterria.stuff.features.coi.AucusesListener;
 import net.mysterria.stuff.features.coi.BoosterPatriarchListener;
 import net.mysterria.stuff.features.coi.CheekListener;
+import net.mysterria.stuff.features.zones.CoiZoneManager;
 import net.mysterria.stuff.features.coi.DangerousActionsListener;
 import net.mysterria.stuff.features.coi.HerabergenListener;
 import net.mysterria.stuff.features.coi.LeoderoStrikeListener;
@@ -34,6 +35,7 @@ public final class MysterriaStuff extends JavaPlugin {
     private RecipeManager recipeManager;
     private BoosterPatriarchListener boosterPatriarchListener;
     private ChatControlSessionHandler chatControlSessionHandler;
+    private CoiZoneManager coiZoneManager;
 
     public static MysterriaStuff getInstance() {
         return instance;
@@ -79,6 +81,8 @@ public final class MysterriaStuff extends JavaPlugin {
         }
 
         if (configManager.isCoiProtectionEnabled()) {
+            coiZoneManager = new CoiZoneManager(this, configManager.getCoiZones());
+            getServer().getPluginManager().registerEvents(coiZoneManager, this);
             getServer().getPluginManager().registerEvents(new DangerousActionsListener(), this);
             getServer().getPluginManager().registerEvents(new LeoderoStrikeListener(this), this);
             getServer().getPluginManager().registerEvents(new AmanisesListener(this), this);
@@ -88,6 +92,9 @@ public final class MysterriaStuff extends JavaPlugin {
             getServer().getPluginManager().registerEvents(new LilithListener(this), this);
             getServer().getPluginManager().registerEvents(new StianoListener(this), this);
             PrettyLogger.feature("CoI Dangerous Actions Listener");
+            if (coiZoneManager.isEnabled()) {
+                PrettyLogger.feature("CoI Zone Restrictions");
+            }
         }
 
         if (configManager.isBoosterPatriarchEnabled()) {
@@ -169,6 +176,10 @@ public final class MysterriaStuff extends JavaPlugin {
     @Override
     public void onDisable() {
 
+        if (coiZoneManager != null) {
+            coiZoneManager.shutdown();
+        }
+
         if (boosterPatriarchListener != null) {
             boosterPatriarchListener.shutdown();
         }
@@ -187,6 +198,10 @@ public final class MysterriaStuff extends JavaPlugin {
 
     public ChatControlSessionHandler getChatControlSessionHandler() {
         return chatControlSessionHandler;
+    }
+
+    public CoiZoneManager getCoiZoneManager() {
+        return coiZoneManager;
     }
 
 }
