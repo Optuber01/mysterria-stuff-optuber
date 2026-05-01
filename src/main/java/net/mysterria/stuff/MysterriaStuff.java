@@ -22,6 +22,9 @@ import net.mysterria.stuff.features.hmcwraps.UniversalTokenManager;
 import net.mysterria.stuff.features.hmcwraps.listener.UniversalTokenListener;
 import net.mysterria.stuff.features.hmcwraps.listener.WrapPreviewListener;
 import net.mysterria.stuff.features.husktowns.LightningStrikeFix;
+import net.mysterria.stuff.features.lastsprint.LastSprint;
+import net.mysterria.stuff.features.lastsprint.LastSprintGUI;
+import net.mysterria.stuff.features.lastsprint.LastSprintListener;
 import net.mysterria.stuff.features.recipes.RecipeManager;
 import net.mysterria.stuff.utils.PrettyLogger;
 import org.bukkit.Bukkit;
@@ -36,6 +39,9 @@ public final class MysterriaStuff extends JavaPlugin {
     private BoosterPatriarchListener boosterPatriarchListener;
     private ChatControlSessionHandler chatControlSessionHandler;
     private CoiZoneManager coiZoneManager;
+    private LastSprint lastSprint;
+    private LastSprintGUI lastSprintGUI;
+    private LastSprintListener lastSprintListener;
 
     public static MysterriaStuff getInstance() {
         return instance;
@@ -140,6 +146,15 @@ public final class MysterriaStuff extends JavaPlugin {
             PrettyLogger.feature("Runtime Recipe Manager");
         }
 
+        if (configManager.isLastSprintEnabled()) {
+            lastSprint = new LastSprint(this);
+            lastSprintGUI = new LastSprintGUI(lastSprint);
+            lastSprintListener = new LastSprintListener(this, lastSprint);
+            getServer().getPluginManager().registerEvents(lastSprintListener, this);
+            getServer().getPluginManager().registerEvents(lastSprintGUI, this);
+            PrettyLogger.feature("Last Sprint Welcome Kit");
+        }
+
         PrettyLogger.success("MysterriaStuff enabled successfully!");
         PrettyLogger.info("Use /mystuff help for available commands");
 
@@ -203,5 +218,14 @@ public final class MysterriaStuff extends JavaPlugin {
     public CoiZoneManager getCoiZoneManager() {
         return coiZoneManager;
     }
+
+    public LastSprint getLastSprint() {
+        return lastSprint;
+    }
+
+    public LastSprintGUI getLastSprintGUI() {
+        return lastSprintGUI;
+    }
+
 
 }

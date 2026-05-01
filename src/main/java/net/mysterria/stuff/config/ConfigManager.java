@@ -87,6 +87,20 @@ public class ConfigManager {
         return config.getBoolean("features.chatcontrol-token", true);
     }
 
+    public boolean isLastSprintEnabled() {
+        return config.getBoolean("features.last-sprint", true);
+    }
+
+    public boolean isLastSprintActive() {
+        return config.getBoolean("last-sprint.active", false);
+    }
+
+    public void setLastSprintActive(boolean active) {
+        config.set("last-sprint.active", active);
+        saveConfig();
+    }
+
+
 
     public boolean isResetAttributesOnJoin() {
         return config.getBoolean("coi-protection.reset-attributes-on-join", true);

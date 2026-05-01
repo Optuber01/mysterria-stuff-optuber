@@ -46,6 +46,20 @@ features:
   # Allows players to set custom join/quit messages in ChatControl
   chatcontrol-token: true
 
+  # Last Sprint Welcome Kit
+  # Gives first-time players a configurable reward kit before The Great Reset
+  # Configure the kit contents via /mystuff lastsprint setup
+  last-sprint: true
+
+# ═══════════════════════════════════════════════════════════════
+# Last Sprint Settings
+# ═══════════════════════════════════════════════════════════════
+
+last-sprint:
+  # Controls whether new players automatically receive the kit on join.
+  # Set up rewards via /mystuff lastsprint setup first, then enable with /mystuff lastsprint enable.
+  active: false
+
 # ═══════════════════════════════════════════════════════════════
 # CircleOfImagination Protection Settings
 # ═══════════════════════════════════════════════════════════════

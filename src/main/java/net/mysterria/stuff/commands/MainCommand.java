@@ -8,6 +8,8 @@ import net.kyori.adventure.text.format.TextDecoration;
 import net.mysterria.stuff.MysterriaStuff;
 import net.mysterria.stuff.features.chatcontrol.ChatControlMessageManager;
 import net.mysterria.stuff.features.chatcontrol.ChatControlSessionHandler;
+import net.mysterria.stuff.features.lastsprint.LastSprint;
+import net.mysterria.stuff.features.lastsprint.LastSprintGUI;
 import net.mysterria.stuff.features.hmcwraps.UniversalTokenManager;
 import net.mysterria.stuff.utils.PrettyLogger;
 import net.mysterria.stuff.utils.StaticItems;
@@ -70,6 +72,9 @@ public class MainCommand implements CommandExecutor {
             case "chatcontrol-restart" -> {
                 return handleChatControlRestart(sender);
             }
+            case "lastsprint" -> {
+                return handleLastSprint(sender, args);
+            }
             default -> {
                 sender.sendMessage(Component.text("Unknown subcommand. Use /mystuff help for available commands.")
                         .color(NamedTextColor.RED));
@@ -102,6 +107,12 @@ public class MainCommand implements CommandExecutor {
         sendCommandHelp(sender, "/mystuff recipe <list|reload>", "Manage custom recipes");
         sendCommandHelp(sender, "/mystuff token give <player> [amount]", "Give universal tokens");
         sendCommandHelp(sender, "/mystuff chatcontrol give <player> [amount]", "Give ChatControl message tokens");
+        sendCommandHelp(sender, "/mystuff lastsprint setup", "Open the Last Sprint reward kit editor");
+        sendCommandHelp(sender, "/mystuff lastsprint give <player>", "Force-give the Last Sprint kit to a player");
+        sendCommandHelp(sender, "/mystuff lastsprint reset <player>", "Reset a player's Last Sprint gift status");
+        sendCommandHelp(sender, "/mystuff lastsprint enable", "Enable auto-give on join");
+        sendCommandHelp(sender, "/mystuff lastsprint disable", "Disable auto-give on join");
+        sendCommandHelp(sender, "/mystuff lastsprint info", "Show Last Sprint status and reward count");
 
         sender.sendMessage(Component.empty());
         sender.sendMessage(header);
@@ -600,6 +611,141 @@ public class MainCommand implements CommandExecutor {
 
         sessionHandler.handleRestart(player);
         return true;
+    }
+
+    private boolean handleLastSprint(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("mysterriastuff.lastsprint")) {
+            sender.sendMessage(Component.text("You don't have permission to use this command!")
+                    .color(NamedTextColor.RED));
+            return true;
+        }
+
+        LastSprint lastSprint = MysterriaStuff.getInstance().getLastSprint();
+        if (lastSprint == null) {
+            sender.sendMessage(Component.text("Last Sprint feature is not enabled!")
+                    .color(NamedTextColor.RED));
+            return true;
+        }
+
+        String sub = args.length >= 2 ? args[1].toLowerCase() : "info";
+
+        switch (sub) {
+            case "setup" -> {
+                if (!sender.hasPermission("mysterriastuff.lastsprint.setup")) {
+                    sender.sendMessage(Component.text("You don't have permission to edit the reward kit!")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+                if (!(sender instanceof Player player)) {
+                    sender.sendMessage(Component.text("This command can only be used by players!")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+                LastSprintGUI gui = MysterriaStuff.getInstance().getLastSprintGUI();
+                gui.open(player);
+                return true;
+            }
+            case "give" -> {
+                if (!sender.hasPermission("mysterriastuff.lastsprint.give")) {
+                    sender.sendMessage(Component.text("You don't have permission to give the reward kit!")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+                if (args.length < 3) {
+                    sender.sendMessage(Component.text("Usage: /mystuff lastsprint give <player>")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+                Player target = Bukkit.getPlayer(args[2]);
+                if (target == null || !target.isOnline()) {
+                    sender.sendMessage(Component.text("Player not found or is offline!")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+                if (lastSprint.getRewardCount() == 0) {
+                    sender.sendMessage(Component.text("No reward items configured! Use /mystuff lastsprint setup first.")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+                lastSprint.giveRewards(target);
+                lastSprint.markGiftReceived(target.getUniqueId());
+                sender.sendMessage(Component.text("Gave Last Sprint kit to ")
+                        .color(NamedTextColor.GREEN)
+                        .append(Component.text(target.getName()).color(NamedTextColor.AQUA))
+                        .append(Component.text("!").color(NamedTextColor.GREEN)));
+                target.sendMessage(Component.text("You've been given the Last Sprint starter kit by an admin!")
+                        .color(NamedTextColor.GREEN));
+                PrettyLogger.info("Force-gave Last Sprint kit to " + target.getName() + " (by " + sender.getName() + ")");
+                return true;
+            }
+            case "reset" -> {
+                if (!sender.hasPermission("mysterriastuff.lastsprint.reset")) {
+                    sender.sendMessage(Component.text("You don't have permission to reset gift status!")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+                if (args.length < 3) {
+                    sender.sendMessage(Component.text("Usage: /mystuff lastsprint reset <player>")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+                Player target = Bukkit.getPlayer(args[2]);
+                if (target != null) {
+                    lastSprint.unmarkGiftReceived(target.getUniqueId());
+                    sender.sendMessage(Component.text("Reset Last Sprint gift status for ")
+                            .color(NamedTextColor.GREEN)
+                            .append(Component.text(target.getName()).color(NamedTextColor.AQUA))
+                            .append(Component.text(".").color(NamedTextColor.GREEN)));
+                } else {
+                    sender.sendMessage(Component.text("Player not found (must be online to reset).")
+                            .color(NamedTextColor.RED));
+                }
+                return true;
+            }
+            case "enable" -> {
+                if (!sender.hasPermission("mysterriastuff.lastsprint.toggle")) {
+                    sender.sendMessage(Component.text("You don't have permission to toggle Last Sprint!")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+                MysterriaStuff.getInstance().getConfigManager().setLastSprintActive(true);
+                sender.sendMessage(Component.text("Last Sprint is now ")
+                        .color(NamedTextColor.GREEN)
+                        .append(Component.text("ENABLED").color(NamedTextColor.GREEN).decorate(net.kyori.adventure.text.format.TextDecoration.BOLD))
+                        .append(Component.text(" — all new players joining will receive the kit.").color(NamedTextColor.GREEN)));
+                PrettyLogger.info("Last Sprint activated by " + sender.getName());
+                return true;
+            }
+            case "disable" -> {
+                if (!sender.hasPermission("mysterriastuff.lastsprint.toggle")) {
+                    sender.sendMessage(Component.text("You don't have permission to toggle Last Sprint!")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+                MysterriaStuff.getInstance().getConfigManager().setLastSprintActive(false);
+                sender.sendMessage(Component.text("Last Sprint is now ")
+                        .color(NamedTextColor.YELLOW)
+                        .append(Component.text("DISABLED").color(NamedTextColor.RED).decorate(net.kyori.adventure.text.format.TextDecoration.BOLD))
+                        .append(Component.text(" — auto-give on join is off.").color(NamedTextColor.YELLOW)));
+                PrettyLogger.info("Last Sprint deactivated by " + sender.getName());
+                return true;
+            }
+            case "info" -> {
+                boolean active = MysterriaStuff.getInstance().getConfigManager().isLastSprintActive();
+                sender.sendMessage(Component.text("Last Sprint — ").color(NamedTextColor.YELLOW)
+                        .append(Component.text(active ? "ACTIVE" : "INACTIVE")
+                                .color(active ? NamedTextColor.GREEN : NamedTextColor.RED)
+                                .decorate(net.kyori.adventure.text.format.TextDecoration.BOLD)));
+                sender.sendMessage(Component.text("Reward items configured: ").color(NamedTextColor.YELLOW)
+                        .append(Component.text(lastSprint.getRewardCount()).color(NamedTextColor.AQUA)));
+                return true;
+            }
+            default -> {
+                sender.sendMessage(Component.text("Usage: /mystuff lastsprint <setup|give|reset|enable|disable|info>")
+                        .color(NamedTextColor.RED));
+                return true;
+            }
+        }
     }
 
     private ItemStack getElytra() {
