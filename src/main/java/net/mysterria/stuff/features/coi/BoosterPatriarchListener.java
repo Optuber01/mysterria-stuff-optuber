@@ -174,22 +174,13 @@ public class BoosterPatriarchListener implements Listener {
         Player player = event.getPlayer();
         String playerName = player.getName().toLowerCase();
 
-        // Check if player is in booster list
         if (currentBoosters.contains(playerName)) {
-            addPatriarchRole(player);
-        } else {
-            // If player was previously a booster but no longer is, remove the role
-            if (playersWithPatriarch.contains(playerName)) {
-                removePatriarchRole(player);
+            if (!playersWithPatriarch.contains(playerName)) {
+                addPatriarchRole(player);
             }
+        } else if (playersWithPatriarch.contains(playerName)) {
+            removePatriarchRole(player);
         }
-    }
-
-    @EventHandler
-    public void onPlayerQuit(PlayerQuitEvent event) {
-        // Clean up tracking when player leaves
-        String playerName = event.getPlayer().getName().toLowerCase();
-        playersWithPatriarch.remove(playerName);
     }
 
     /**
