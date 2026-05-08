@@ -108,6 +108,11 @@ public class DangerousActionsListener implements Listener {
         double maxHealth = player.getAttribute(Attribute.MAX_HEALTH).getValue();
         player.setHealth(Math.min(player.getHealth(), maxHealth));
         player.setGlowing(false);
+        player.setFireTicks(0);
+        player.setAllowFlight(false);
+        player.setFlying(false);
+        player.setNoDamageTicks(0);
+        player.setGameMode(GameMode.SURVIVAL);
 
         PrettyLogger.debug("Completed attribute reset for player: " + player.getName());
     }
