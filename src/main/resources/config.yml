@@ -52,7 +52,8 @@ features:
   last-sprint: true
 
   # Dungeon World Enforcer
-  # Forces a world created by a third-party plugin to use FLAT world type.
+  # Pre-creates a void (completely empty) world before a third-party dungeon plugin can,
+  # so the plugin's structures are placed in a void rather than over generated terrain.
   # MysterriaStuff must load before the dungeon plugin — add it to 'loadbefore' in plugin.yml.
   dungeon-world-enforcer: false
 

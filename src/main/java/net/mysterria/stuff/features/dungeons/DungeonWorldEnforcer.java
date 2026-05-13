@@ -17,45 +17,32 @@ public class DungeonWorldEnforcer implements Listener {
 
     public DungeonWorldEnforcer(MysterriaStuff plugin, String worldName) {
         this.worldName = worldName;
-        enforceWorldType();
+        enforceVoidWorld();
     }
 
-    private void enforceWorldType() {
+    private void enforceVoidWorld() {
         World existing = Bukkit.getWorld(worldName);
         if (existing != null) {
-            // World already loaded — we were beaten to it or it's a fresh server start
-            if (existing.getWorldType() != WorldType.FLAT) {
-                PrettyLogger.warn("World '" + worldName + "' is already loaded with type "
-                        + existing.getWorldType() + " instead of FLAT. "
-                        + "Add the dungeon plugin to 'loadbefore' in plugin.yml to fix this.");
-            } else {
-                PrettyLogger.debug("World '" + worldName + "' already loaded with FLAT type.");
-            }
+            PrettyLogger.debug("World '" + worldName + "' already loaded — skipping pre-creation.");
             return;
         }
 
-        PrettyLogger.info("Pre-creating world '" + worldName + "' with FLAT type to override dungeon plugin...");
+        PrettyLogger.info("Pre-creating void world '" + worldName + "' before dungeon plugin...");
         WorldCreator creator = new WorldCreator(worldName);
+        creator.generator(new VoidChunkGenerator());
         creator.type(WorldType.FLAT);
         creator.generateStructures(false);
         World world = Bukkit.createWorld(creator);
         if (world != null) {
-            PrettyLogger.success("World '" + worldName + "' pre-created with FLAT type.");
+            PrettyLogger.success("Void world '" + worldName + "' pre-created successfully.");
         } else {
-            PrettyLogger.warn("Failed to pre-create world '" + worldName + "' — Bukkit returned null.");
+            PrettyLogger.warn("Failed to pre-create void world '" + worldName + "' — Bukkit returned null.");
         }
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onWorldInit(WorldInitEvent event) {
         if (!event.getWorld().getName().equals(worldName)) return;
-        World world = event.getWorld();
-        if (world.getWorldType() != WorldType.FLAT) {
-            PrettyLogger.warn("World '" + worldName + "' initialized as " + world.getWorldType()
-                    + " — FLAT enforcement failed. Ensure MysterriaStuff loads before the dungeon plugin "
-                    + "via 'loadbefore' in plugin.yml.");
-        } else {
-            PrettyLogger.debug("World '" + worldName + "' confirmed FLAT on WorldInitEvent.");
-        }
+        PrettyLogger.debug("World '" + worldName + "' initialized.");
     }
 }
