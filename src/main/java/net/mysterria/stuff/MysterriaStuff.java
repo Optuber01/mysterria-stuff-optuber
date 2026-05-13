@@ -22,6 +22,7 @@ import net.mysterria.stuff.features.hmcwraps.UniversalTokenManager;
 import net.mysterria.stuff.features.hmcwraps.listener.UniversalTokenListener;
 import net.mysterria.stuff.features.hmcwraps.listener.WrapPreviewListener;
 import net.mysterria.stuff.features.husktowns.LightningStrikeFix;
+import net.mysterria.stuff.features.dungeons.DungeonWorldEnforcer;
 import net.mysterria.stuff.features.lastsprint.LastSprint;
 import net.mysterria.stuff.features.lastsprint.LastSprintGUI;
 import net.mysterria.stuff.features.lastsprint.LastSprintListener;
@@ -144,6 +145,12 @@ public final class MysterriaStuff extends JavaPlugin {
             recipeManager = new RecipeManager();
             recipeManager.initialize();
             PrettyLogger.feature("Runtime Recipe Manager");
+        }
+
+        if (configManager.isDungeonWorldEnforcerEnabled()) {
+            DungeonWorldEnforcer enforcer = new DungeonWorldEnforcer(this, configManager.getDungeonWorldName());
+            getServer().getPluginManager().registerEvents(enforcer, this);
+            PrettyLogger.feature("Dungeon World Enforcer (" + configManager.getDungeonWorldName() + " → FLAT)");
         }
 
         if (configManager.isLastSprintEnabled()) {

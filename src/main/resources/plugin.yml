@@ -5,6 +5,8 @@ api-version: '1.21'
 authors: [ ikeepcalm ]
 description: Enhanced Minecraft plugin with utilities, fixes, and runtime features
 soft-depend: [ HMCWraps ]
+loadbefore:
+  - MythicDungeons
 
 commands:
   mysterriastuff:

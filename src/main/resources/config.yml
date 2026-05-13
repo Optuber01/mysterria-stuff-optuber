@@ -51,6 +51,19 @@ features:
   # Configure the kit contents via /mystuff lastsprint setup
   last-sprint: true
 
+  # Dungeon World Enforcer
+  # Forces a world created by a third-party plugin to use FLAT world type.
+  # MysterriaStuff must load before the dungeon plugin — add it to 'loadbefore' in plugin.yml.
+  dungeon-world-enforcer: false
+
+# ═══════════════════════════════════════════════════════════════
+# Dungeon World Enforcer Settings
+# ═══════════════════════════════════════════════════════════════
+
+dungeon-world-enforcer:
+  # The world name that the dungeon plugin creates
+  world-name: "dungeons_normal_0"
+
 # ═══════════════════════════════════════════════════════════════
 # Last Sprint Settings
 # ═══════════════════════════════════════════════════════════════

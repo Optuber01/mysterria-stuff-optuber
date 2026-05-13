@@ -91,6 +91,14 @@ public class ConfigManager {
         return config.getBoolean("features.last-sprint", true);
     }
 
+    public boolean isDungeonWorldEnforcerEnabled() {
+        return config.getBoolean("features.dungeon-world-enforcer", true);
+    }
+
+    public String getDungeonWorldName() {
+        return config.getString("dungeon-world-enforcer.world-name", "dungeons_normal_0");
+    }
+
     public boolean isLastSprintActive() {
         return config.getBoolean("last-sprint.active", false);
     }
