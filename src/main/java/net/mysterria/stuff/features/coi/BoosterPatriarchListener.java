@@ -2,31 +2,26 @@ package net.mysterria.stuff.features.coi;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
-import com.google.gson.reflect.TypeToken;
 import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
 import net.mysterria.stuff.MysterriaStuff;
 import net.mysterria.stuff.utils.PrettyLogger;
 import org.bukkit.Bukkit;
+import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.lang.reflect.Type;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -40,17 +35,10 @@ public class BoosterPatriarchListener implements Listener {
     private final HttpClient httpClient;
     private final Gson gson;
     private final String apiUrl;
-    private final File dataFile;
 
-    // Set of current boosters (thread-safe)
     private final Set<String> currentBoosters;
 
-    // Set of players who currently have the patriarch role (thread-safe)
-    private final Set<String> playersWithPatriarch;
-
-    // Update interval in ticks (20 ticks = 1 second)
     private final long updateIntervalTicks;
-
     private BukkitRunnable updateTask;
 
     public BoosterPatriarchListener(MysterriaStuff plugin) {
@@ -62,32 +50,26 @@ public class BoosterPatriarchListener implements Listener {
         this.apiUrl = plugin.getConfigManager().getConfig()
                 .getString("coi-booster-patriarch.api-url", "https://api.mysterria.net/api/user/boosters");
 
-        // Get update interval from config (in seconds), default to 5 minutes
         int updateIntervalSeconds = plugin.getConfigManager().getConfig()
                 .getInt("coi-booster-patriarch.update-interval-seconds", 300);
         this.updateIntervalTicks = updateIntervalSeconds * 20L;
 
         this.currentBoosters = ConcurrentHashMap.newKeySet();
-        this.playersWithPatriarch = ConcurrentHashMap.newKeySet();
 
-        // Setup data file for persistence
-        this.dataFile = new File(plugin.getDataFolder(), "booster-patriarch-data.json");
-
-        // Load persisted data
-        loadPersistedData();
-
-        // Initial fetch
         fetchBoostersAsync();
-
-        // Start periodic update task
         startPeriodicUpdate();
 
         PrettyLogger.info("BoosterPatriarchListener initialized with " + updateIntervalSeconds + "s update interval");
     }
 
-    /**
-     * Start the periodic task to fetch boosters
-     */
+    public Set<String> getCurrentBoosters() {
+        return Collections.unmodifiableSet(currentBoosters);
+    }
+
+    public void refreshBoosters() {
+        fetchBoostersAsync();
+    }
+
     private void startPeriodicUpdate() {
         updateTask = new BukkitRunnable() {
             @Override
@@ -95,15 +77,10 @@ public class BoosterPatriarchListener implements Listener {
                 fetchBoostersAsync();
             }
         };
-
-        // Run task periodically (delay = interval)
         updateTask.runTaskTimer(plugin, updateIntervalTicks, updateIntervalTicks);
         PrettyLogger.debug("Started periodic booster update task");
     }
 
-    /**
-     * Fetch boosters from API asynchronously
-     */
     private void fetchBoostersAsync() {
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             try {
@@ -130,9 +107,6 @@ public class BoosterPatriarchListener implements Listener {
         });
     }
 
-    /**
-     * Update the booster list and sync roles for online players
-     */
     private void updateBoosterList(String[] newBoosters) {
         Set<String> newBoosterSet = new HashSet<>();
         for (String booster : newBoosters) {
@@ -145,23 +119,22 @@ public class BoosterPatriarchListener implements Listener {
         Set<String> removedBoosters = new HashSet<>(currentBoosters);
         removedBoosters.removeAll(newBoosterSet);
 
-        // Update the current booster list
         currentBoosters.clear();
         currentBoosters.addAll(newBoosterSet);
 
-        // Sync roles for online players
         Bukkit.getScheduler().runTask(plugin, () -> {
             for (Player player : Bukkit.getOnlinePlayers()) {
                 String playerName = player.getName().toLowerCase();
                 boolean isBooster = currentBoosters.contains(playerName);
-                boolean hasRole = playersWithPatriarch.contains(playerName);
 
-                if (isBooster && !hasRole) {
-                    addPatriarchRole(player);
-                } else if (!isBooster && hasRole) {
-                    removePatriarchRole(player);
-                } else if (isBooster && shouldRemovePatriarchDueToBoon(player)) {
-                    removePatriarchRole(player);
+                if (isBooster) {
+                    if (shouldRemovePatriarchDueToBoon(player)) {
+                        removePatriarchRole(player, null);
+                    } else {
+                        addPatriarchRole(player);
+                    }
+                } else if (hasPatriarchInCoI(player)) {
+                    removePatriarchRole(player, null);
                 }
             }
 
@@ -180,62 +153,74 @@ public class BoosterPatriarchListener implements Listener {
         String playerName = player.getName().toLowerCase();
 
         if (currentBoosters.contains(playerName)) {
-            if (!playersWithPatriarch.contains(playerName)) {
+            if (shouldRemovePatriarchDueToBoon(player)) {
+                removePatriarchRole(player, null);
+            } else {
                 addPatriarchRole(player);
-            } else if (shouldRemovePatriarchDueToBoon(player)) {
-                removePatriarchRole(player);
             }
-        } else if (playersWithPatriarch.contains(playerName)) {
-            removePatriarchRole(player);
+        } else if (hasPatriarchInCoI(player)) {
+            removePatriarchRole(player, null);
         }
     }
 
     private void addPatriarchRole(Player player) {
-        if (!shouldAddPatriarch(player)) {
-            PrettyLogger.debug("Skipping patriarch for " + player.getName() + " - player already has a boon");
+        String reason = checkShouldAddPatriarch(player);
+        if (reason != null) {
+            PrettyLogger.debug("Skipping patriarch for " + player.getName() + ": " + reason);
             return;
         }
+
         CircleOfImaginationAPI api = plugin.getCoiAPI();
         String playerName = player.getName();
 
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            boolean success = api.addPathwayOffline(player.getUniqueId(), "patriarch", 9);
-            if (success) {
-                playersWithPatriarch.add(playerName.toLowerCase());
-                savePersistedData();
-                player.sendMessage(Component.text("As a server booster, you have been granted the Patriarch boon!").color(NamedTextColor.GOLD));
-                PrettyLogger.debug("Added patriarch role to booster: " + playerName);
-            } else {
-                PrettyLogger.warn("Failed to add patriarch role to: " + playerName);
-            }
-        });
+        boolean success = api.addPathwayOffline(player.getUniqueId(), "patriarch", 9);
+        if (success) {
+            player.sendMessage(Component.text("As a server booster, you have been granted the Patriarch boon!").color(NamedTextColor.GOLD));
+            PrettyLogger.debug("Added patriarch role to booster: " + playerName);
+        } else {
+            PrettyLogger.warn("Failed to add patriarch role to: " + playerName + " (CoI API returned false)");
+        }
     }
 
-    private void removePatriarchRole(Player player) {
+    private boolean hasPatriarchInCoI(Player player) {
+        CircleOfImaginationAPI api = plugin.getCoiAPI();
+        if (api == null) return false;
+        Map<String, Integer> pathways = api.getPathways(player.getName());
+        return pathways != null && pathways.containsKey("patriarch");
+    }
+
+    /**
+     * Returns null if patriarch can be added, or a reason string explaining why not.
+     */
+    private String checkShouldAddPatriarch(Player player) {
+        CircleOfImaginationAPI api = plugin.getCoiAPI();
+        if (api == null) return "CoI API is null (plugin not loaded)";
+        if (!api.isBeyonder(player)) return "player is not a Beyonder";
+        Map<String, Integer> pathways = api.getPathways(player.getName());
+        if (pathways == null) return "getPathways(" + player.getName() + ") returned null";
+        if (pathways.isEmpty()) return "pathways map is empty";
+        if (pathways.containsKey("patriarch")) return "already has patriarch pathway";
+        if (pathways.size() != 1) return "has " + pathways.size() + " pathways " + pathways.keySet() + " (expected exactly 1 — main pathway only)";
+        return null;
+    }
+
+    private void removePatriarchRole(Player player, CommandSender reporter) {
         String playerName = player.getName();
         String command = "coi outer remove " + playerName + " patriarch";
 
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            boolean success = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
-            if (success) {
-                playersWithPatriarch.remove(playerName.toLowerCase());
-                savePersistedData();
-                player.sendMessage(Component.text("Your Patriarch boon has been removed.").color(NamedTextColor.RED));
-                PrettyLogger.debug("Removed patriarch role from: " + playerName);
-            } else {
-                PrettyLogger.warn("Failed to remove patriarch role from: " + playerName);
+        boolean success = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
+        if (success) {
+            player.sendMessage(Component.text("Your Patriarch boon has been removed.").color(NamedTextColor.RED));
+            if (reporter != null) {
+                reporter.sendMessage(Component.text("Removed Patriarch from " + playerName + ".").color(NamedTextColor.GREEN));
             }
-        });
-    }
-
-    private boolean shouldAddPatriarch(Player player) {
-        CircleOfImaginationAPI api = plugin.getCoiAPI();
-        if (api == null) return false; // CoI not loaded — player cannot be a beyonder
-        if (!api.isBeyonder(player)) return false; // Must have main pathway first
-        Map<String, Integer> pathways = api.getPathways(player.getName());
-        if (pathways == null || pathways.isEmpty()) return false;
-        // Exactly 1 pathway = only main pathway, no boon yet
-        return pathways.size() == 1;
+            PrettyLogger.debug("Removed patriarch role from: " + playerName);
+        } else {
+            PrettyLogger.warn("Failed to remove patriarch role from: " + playerName + " (command dispatch returned false)");
+            if (reporter != null) {
+                reporter.sendMessage(Component.text("Command dispatch failed for " + playerName + ". Check console.").color(NamedTextColor.RED));
+            }
+        }
     }
 
     private boolean shouldRemovePatriarchDueToBoon(Player player) {
@@ -245,53 +230,86 @@ public class BoosterPatriarchListener implements Listener {
         if (!api.isBeyonder(player)) return false;
         Map<String, Integer> pathways = api.getPathways(player.getName());
         if (pathways == null) return false;
-        // Has patriarch + at least one other boon beyond the main pathway (size > 2)
         return pathways.containsKey("patriarch") && pathways.size() > 2;
     }
 
-    /**
-     * Load persisted data from file
-     */
-    private void loadPersistedData() {
-        if (!dataFile.exists()) {
-            PrettyLogger.debug("No persisted booster-patriarch data found, starting fresh");
+    public void forceGrantPatriarch(Player player, CommandSender reporter) {
+        CircleOfImaginationAPI api = plugin.getCoiAPI();
+        if (api == null) {
+            reporter.sendMessage(Component.text("CoI API is not available — cannot grant patriarch.").color(NamedTextColor.RED));
             return;
         }
 
-        try (FileReader reader = new FileReader(dataFile)) {
-            Type setType = new TypeToken<HashSet<String>>(){}.getType();
-            Set<String> loadedData = gson.fromJson(reader, setType);
-            if (loadedData != null) {
-                playersWithPatriarch.addAll(loadedData);
-                PrettyLogger.debug("Loaded " + loadedData.size() + " players with patriarch role from disk");
-            }
-        } catch (IOException | JsonSyntaxException e) {
-            PrettyLogger.warn("Failed to load persisted booster-patriarch data: " + e.getMessage());
+        boolean success = api.addPathwayOffline(player.getUniqueId(), "patriarch", 9);
+        if (success) {
+            player.sendMessage(Component.text("As a server booster, you have been granted the Patriarch boon!").color(NamedTextColor.GOLD));
+            reporter.sendMessage(Component.text("Force-granted Patriarch to " + player.getName() + ".").color(NamedTextColor.GREEN));
+            PrettyLogger.info("Force-granted patriarch to " + player.getName() + " by " + reporter.getName());
+        } else {
+            reporter.sendMessage(Component.text("CoI API returned false — Patriarch was NOT granted to " + player.getName() + ".").color(NamedTextColor.RED));
+            PrettyLogger.warn("Force-grant patriarch failed for " + player.getName());
         }
     }
 
-    /**
-     * Save persisted data to file
-     */
-    private void savePersistedData() {
-        try {
-            // Ensure data folder exists
-            if (!plugin.getDataFolder().exists()) {
-                plugin.getDataFolder().mkdirs();
-            }
-
-            try (FileWriter writer = new FileWriter(dataFile)) {
-                gson.toJson(playersWithPatriarch, writer);
-                PrettyLogger.debug("Saved booster-patriarch data to disk");
-            }
-        } catch (IOException e) {
-            PrettyLogger.warn("Failed to save persisted booster-patriarch data: " + e.getMessage());
-        }
+    public void forceRevokePatriarch(Player player, CommandSender reporter) {
+        removePatriarchRole(player, reporter);
     }
 
-    /**
-     * Stop the periodic update task
-     */
+    public void sendDiagnostics(Player player, CommandSender reporter) {
+        String nameLower = player.getName().toLowerCase();
+        boolean inBoosterList = currentBoosters.contains(nameLower);
+
+        CircleOfImaginationAPI api = plugin.getCoiAPI();
+
+        reporter.sendMessage(Component.text("═".repeat(45)).color(NamedTextColor.DARK_PURPLE));
+        reporter.sendMessage(Component.text(" Booster Patriarch Diagnostics: " + player.getName()).color(NamedTextColor.WHITE));
+        reporter.sendMessage(Component.text("═".repeat(45)).color(NamedTextColor.DARK_PURPLE));
+
+        sendLine(reporter, "In booster API list", inBoosterList);
+
+        if (api == null) {
+            sendLine(reporter, "CoI API available", false);
+            reporter.sendMessage(Component.text("  (plugin not loaded/registered)").color(NamedTextColor.GRAY));
+            reporter.sendMessage(Component.text("═".repeat(45)).color(NamedTextColor.DARK_PURPLE));
+            return;
+        }
+
+        sendLine(reporter, "CoI API available", true);
+        sendLine(reporter, "isBeyonder", api.isBeyonder(player));
+        sendLine(reporter, "Has patriarch in CoI", hasPatriarchInCoI(player));
+
+        Map<String, Integer> pathways = api.getPathways(player.getName());
+        if (pathways == null) {
+            reporter.sendMessage(Component.text("  Pathways: ").color(NamedTextColor.GRAY)
+                    .append(Component.text("null (getPathways returned null!)").color(NamedTextColor.RED)));
+        } else if (pathways.isEmpty()) {
+            reporter.sendMessage(Component.text("  Pathways: ").color(NamedTextColor.GRAY)
+                    .append(Component.text("empty map").color(NamedTextColor.RED)));
+        } else {
+            reporter.sendMessage(Component.text("  Pathways (" + pathways.size() + "): ").color(NamedTextColor.GRAY)
+                    .append(Component.text(pathways.toString()).color(NamedTextColor.AQUA)));
+        }
+
+        String denyReason = checkShouldAddPatriarch(player);
+        if (denyReason == null) {
+            reporter.sendMessage(Component.text("  Would grant Patriarch: ").color(NamedTextColor.GRAY)
+                    .append(Component.text("YES").color(NamedTextColor.GREEN)));
+        } else {
+            reporter.sendMessage(Component.text("  Would grant Patriarch: ").color(NamedTextColor.GRAY)
+                    .append(Component.text("NO").color(NamedTextColor.RED))
+                    .append(Component.text(" — " + denyReason).color(NamedTextColor.YELLOW)));
+        }
+
+        sendLine(reporter, "Would remove Patriarch (too many boons)", shouldRemovePatriarchDueToBoon(player));
+
+        reporter.sendMessage(Component.text("═".repeat(45)).color(NamedTextColor.DARK_PURPLE));
+    }
+
+    private void sendLine(CommandSender sender, String label, boolean value) {
+        sender.sendMessage(Component.text("  " + label + ": ").color(NamedTextColor.GRAY)
+                .append(Component.text(value ? "YES" : "NO").color(value ? NamedTextColor.GREEN : NamedTextColor.RED)));
+    }
+
     public void shutdown() {
         if (updateTask != null) {
             updateTask.cancel();

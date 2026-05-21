@@ -107,7 +107,6 @@ public final class MysterriaStuff extends JavaPlugin {
             PrettyLogger.feature("CoI Booster Patriarch System");
         }
 
-
         if (configManager.isUniversalTokenEnabled()) {
             HMCWraps hmcWraps = loadHmcWraps();
             if (hmcWraps != null) {
@@ -254,5 +253,9 @@ public final class MysterriaStuff extends JavaPlugin {
 
     public CircleOfImaginationAPI getCoiAPI() {
         return coiAPI;
+    }
+
+    public BoosterPatriarchListener getBoosterPatriarchListener() {
+        return boosterPatriarchListener;
     }
 }

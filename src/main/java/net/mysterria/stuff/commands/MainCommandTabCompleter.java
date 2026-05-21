@@ -18,7 +18,11 @@ public class MainCommandTabCompleter implements TabCompleter {
 
     private static final List<String> MAIN_COMMANDS = Arrays.asList(
             "help", "info", "status", "reload", "give", "export", "debug", "recipe", "token",
-            "chatcontrol", "chatcontrol-confirm", "chatcontrol-cancel", "chatcontrol-restart", "lastsprint"
+            "chatcontrol", "chatcontrol-confirm", "chatcontrol-cancel", "chatcontrol-restart", "lastsprint", "booster"
+    );
+
+    private static final List<String> BOOSTER_SUBCOMMANDS = Arrays.asList(
+            "check", "grant", "revoke", "refresh", "list"
     );
 
     private static final List<String> LASTSPRINT_SUBCOMMANDS = Arrays.asList(
@@ -67,6 +71,9 @@ public class MainCommandTabCompleter implements TabCompleter {
                 case "lastsprint" -> {
                     return filterStartingWith(LASTSPRINT_SUBCOMMANDS, args[1]);
                 }
+                case "booster" -> {
+                    return filterStartingWith(BOOSTER_SUBCOMMANDS, args[1]);
+                }
             }
         } else if (args.length == 3) {
 
@@ -96,6 +103,15 @@ public class MainCommandTabCompleter implements TabCompleter {
                 );
             } else if (args[0].equalsIgnoreCase("lastsprint")
                     && (args[1].equalsIgnoreCase("give") || args[1].equalsIgnoreCase("reset"))) {
+
+                return filterStartingWith(
+                        Bukkit.getOnlinePlayers().stream()
+                                .map(Player::getName)
+                                .collect(Collectors.toList()),
+                        args[2]
+                );
+            } else if (args[0].equalsIgnoreCase("booster")
+                    && (args[1].equalsIgnoreCase("check") || args[1].equalsIgnoreCase("grant") || args[1].equalsIgnoreCase("revoke"))) {
 
                 return filterStartingWith(
                         Bukkit.getOnlinePlayers().stream()

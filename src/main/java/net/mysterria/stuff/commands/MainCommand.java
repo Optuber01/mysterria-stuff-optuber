@@ -7,6 +7,7 @@ import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.mysterria.stuff.MysterriaStuff;
 import net.mysterria.stuff.features.chatcontrol.ChatControlMessageManager;
+import net.mysterria.stuff.features.coi.BoosterPatriarchListener;
 import net.mysterria.stuff.features.chatcontrol.ChatControlSessionHandler;
 import net.mysterria.stuff.features.lastsprint.LastSprint;
 import net.mysterria.stuff.features.lastsprint.LastSprintGUI;
@@ -75,6 +76,9 @@ public class MainCommand implements CommandExecutor {
             case "lastsprint" -> {
                 return handleLastSprint(sender, args);
             }
+            case "booster" -> {
+                return handleBooster(sender, args);
+            }
             default -> {
                 sender.sendMessage(Component.text("Unknown subcommand. Use /mystuff help for available commands.")
                         .color(NamedTextColor.RED));
@@ -113,6 +117,11 @@ public class MainCommand implements CommandExecutor {
         sendCommandHelp(sender, "/mystuff lastsprint enable", "Enable auto-give on join");
         sendCommandHelp(sender, "/mystuff lastsprint disable", "Disable auto-give on join");
         sendCommandHelp(sender, "/mystuff lastsprint info", "Show Last Sprint status and reward count");
+        sendCommandHelp(sender, "/mystuff booster check <player>", "Diagnose booster/patriarch state for a player");
+        sendCommandHelp(sender, "/mystuff booster grant <player>", "Force-grant Patriarch boon to a player");
+        sendCommandHelp(sender, "/mystuff booster revoke <player>", "Force-revoke Patriarch boon from a player");
+        sendCommandHelp(sender, "/mystuff booster refresh", "Manually re-fetch the booster list from the API");
+        sendCommandHelp(sender, "/mystuff booster list", "List all known boosters and tracked players");
 
         sender.sendMessage(Component.empty());
         sender.sendMessage(header);
@@ -742,6 +751,101 @@ public class MainCommand implements CommandExecutor {
             }
             default -> {
                 sender.sendMessage(Component.text("Usage: /mystuff lastsprint <setup|give|reset|enable|disable|info>")
+                        .color(NamedTextColor.RED));
+                return true;
+            }
+        }
+    }
+
+    private boolean handleBooster(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("mysterriastuff.booster")) {
+            sender.sendMessage(Component.text("You don't have permission to use this command!")
+                    .color(NamedTextColor.RED));
+            return true;
+        }
+
+        BoosterPatriarchListener bpl = MysterriaStuff.getInstance().getBoosterPatriarchListener();
+        if (bpl == null) {
+            sender.sendMessage(Component.text("Booster Patriarch system is not enabled!")
+                    .color(NamedTextColor.RED));
+            return true;
+        }
+
+        String sub = args.length >= 2 ? args[1].toLowerCase() : "help";
+
+        switch (sub) {
+            case "check" -> {
+                if (args.length < 3) {
+                    sender.sendMessage(Component.text("Usage: /mystuff booster check <player>")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+                Player target = Bukkit.getPlayer(args[2]);
+                if (target == null || !target.isOnline()) {
+                    sender.sendMessage(Component.text("Player not found or is offline!")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+                bpl.sendDiagnostics(target, sender);
+                return true;
+            }
+            case "grant" -> {
+                if (args.length < 3) {
+                    sender.sendMessage(Component.text("Usage: /mystuff booster grant <player>")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+                Player target = Bukkit.getPlayer(args[2]);
+                if (target == null || !target.isOnline()) {
+                    sender.sendMessage(Component.text("Player not found or is offline!")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+                bpl.forceGrantPatriarch(target, sender);
+                return true;
+            }
+            case "revoke" -> {
+                if (args.length < 3) {
+                    sender.sendMessage(Component.text("Usage: /mystuff booster revoke <player>")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+                Player target = Bukkit.getPlayer(args[2]);
+                if (target == null || !target.isOnline()) {
+                    sender.sendMessage(Component.text("Player not found or is offline!")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+                bpl.forceRevokePatriarch(target, sender);
+                return true;
+            }
+            case "refresh" -> {
+                bpl.refreshBoosters();
+                sender.sendMessage(Component.text("Booster list refresh triggered (async). Check console for results.")
+                        .color(NamedTextColor.GREEN));
+                return true;
+            }
+            case "list" -> {
+                var boosters = bpl.getCurrentBoosters();
+
+                Component header = Component.text("═".repeat(45)).color(net.kyori.adventure.text.format.TextColor.color(0xAA55FF));
+                sender.sendMessage(header);
+                sender.sendMessage(Component.text(" Booster Patriarch List").color(NamedTextColor.WHITE));
+                sender.sendMessage(header);
+
+                sender.sendMessage(Component.text("Boosters from API (" + boosters.size() + "):").color(NamedTextColor.YELLOW));
+                if (boosters.isEmpty()) {
+                    sender.sendMessage(Component.text("  (none — list may still be loading)").color(NamedTextColor.GRAY));
+                } else {
+                    boosters.stream().sorted().forEach(name ->
+                            sender.sendMessage(Component.text("  • " + name).color(NamedTextColor.AQUA)));
+                }
+
+                sender.sendMessage(header);
+                return true;
+            }
+            default -> {
+                sender.sendMessage(Component.text("Usage: /mystuff booster <check|grant|revoke|refresh|list>")
                         .color(NamedTextColor.RED));
                 return true;
             }
