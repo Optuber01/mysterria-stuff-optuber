@@ -4,7 +4,7 @@ main: net.mysterria.stuff.MysterriaStuff
 api-version: '1.21'
 authors: [ ikeepcalm ]
 description: Enhanced Minecraft plugin with utilities, fixes, and runtime features
-soft-depend: [ HMCWraps ]
+soft-depend: [ HMCWraps, CircleOfImagination ]
 loadbefore:
   - MythicDungeons
 
@@ -32,6 +32,7 @@ permissions:
       mysterriastuff.chatcontrol: true
       mysterriastuff.chatcontrol.give: true
       mysterriastuff.chatcontrol.use: true
+      mysterriastuff.patriarch.bypass: true
 
   mysterriastuff.use:
     description: Allows using basic MysterriaStuff commands
@@ -80,3 +81,7 @@ permissions:
   mysterriastuff.chatcontrol.use:
     description: Allows using ChatControl message tokens to set custom join/quit messages
     default: true
+
+  mysterriastuff.patriarch.bypass:
+    description: Allows bypassing the boon limit check, keeping patriarch even when another boon is present
+    default: op

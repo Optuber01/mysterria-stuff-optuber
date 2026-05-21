@@ -19,12 +19,17 @@ repositories {
         name = "papermc-repo"
         url = "https://repo.papermc.io/repository/maven-public/"
     }
+
+    maven {
+        url = "https://nexus.mysterria.net/repository/plugin-public/"
+    }
 }
 
 tasks.build.dependsOn(shadowJar)
 
 dependencies {
     implementation("dev.triumphteam:triumph-gui-paper:3.1.13")
+    compileOnly("dev.ua.ikeepcalm:circle-of-imagination-api:1.4.0-SNAPSHOT")
     compileOnly("de.skyslycer.hmcwraps:api:1.7.0")
     compileOnly("io.papermc.paper:paper-api:26.1.2.build.+")
 }

@@ -1,6 +1,7 @@
 package net.mysterria.stuff;
 
 import de.skyslycer.hmcwraps.HMCWraps;
+import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
 import net.mysterria.stuff.commands.MainCommand;
 import net.mysterria.stuff.commands.MainCommandTabCompleter;
 import net.mysterria.stuff.config.ConfigManager;
@@ -8,25 +9,17 @@ import net.mysterria.stuff.features.battlepass.NetheriteElytraBlocker;
 import net.mysterria.stuff.features.chatcontrol.ChatControlMessageManager;
 import net.mysterria.stuff.features.chatcontrol.ChatControlSessionHandler;
 import net.mysterria.stuff.features.chatcontrol.ChatControlTokenListener;
-import net.mysterria.stuff.features.coi.AmanisesListener;
-import net.mysterria.stuff.features.coi.AucusesListener;
-import net.mysterria.stuff.features.coi.BoosterPatriarchListener;
-import net.mysterria.stuff.features.coi.CheekListener;
-import net.mysterria.stuff.features.zones.CoiZoneManager;
-import net.mysterria.stuff.features.coi.DangerousActionsListener;
-import net.mysterria.stuff.features.coi.HerabergenListener;
-import net.mysterria.stuff.features.coi.LeoderoStrikeListener;
-import net.mysterria.stuff.features.coi.LilithListener;
-import net.mysterria.stuff.features.coi.StianoListener;
+import net.mysterria.stuff.features.coi.*;
+import net.mysterria.stuff.features.dungeons.DungeonWorldEnforcer;
 import net.mysterria.stuff.features.hmcwraps.UniversalTokenManager;
 import net.mysterria.stuff.features.hmcwraps.listener.UniversalTokenListener;
 import net.mysterria.stuff.features.hmcwraps.listener.WrapPreviewListener;
 import net.mysterria.stuff.features.husktowns.LightningStrikeFix;
-import net.mysterria.stuff.features.dungeons.DungeonWorldEnforcer;
 import net.mysterria.stuff.features.lastsprint.LastSprint;
 import net.mysterria.stuff.features.lastsprint.LastSprintGUI;
 import net.mysterria.stuff.features.lastsprint.LastSprintListener;
 import net.mysterria.stuff.features.recipes.RecipeManager;
+import net.mysterria.stuff.features.zones.CoiZoneManager;
 import net.mysterria.stuff.utils.PrettyLogger;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
@@ -35,6 +28,9 @@ import org.bukkit.plugin.java.JavaPlugin;
 public final class MysterriaStuff extends JavaPlugin {
 
     private static MysterriaStuff instance;
+
+    private CircleOfImaginationAPI coiAPI;
+
     private ConfigManager configManager;
     private RecipeManager recipeManager;
     private BoosterPatriarchListener boosterPatriarchListener;
@@ -105,6 +101,7 @@ public final class MysterriaStuff extends JavaPlugin {
         }
 
         if (configManager.isBoosterPatriarchEnabled()) {
+            loadCoiApi();
             boosterPatriarchListener = new BoosterPatriarchListener(this);
             getServer().getPluginManager().registerEvents(boosterPatriarchListener, this);
             PrettyLogger.feature("CoI Booster Patriarch System");
@@ -167,6 +164,27 @@ public final class MysterriaStuff extends JavaPlugin {
 
         if (configManager.isShowHeader()) {
             PrettyLogger.header("Initialization Complete");
+        }
+    }
+
+    private void loadCoiApi() {
+        Plugin coiPlugin = getServer().getPluginManager().getPlugin("CircleOfImagination");
+        if (coiPlugin == null || !coiPlugin.isEnabled()) {
+            PrettyLogger.warn("CircleOfImagination plugin not found or not enabled, boon limit checks will be skipped");
+            return;
+        }
+
+        try {
+            CircleOfImaginationAPI api = Bukkit.getServer().getServicesManager().load(CircleOfImaginationAPI.class);
+            if (api == null) {
+                PrettyLogger.warn("CircleOfImagination API not registered, boon limit checks will be skipped");
+                return;
+            }
+
+            this.coiAPI = api;
+            PrettyLogger.debug("CircleOfImagination API hooked successfully");
+        } catch (Throwable t) {
+            PrettyLogger.warn("Failed to hook CircleOfImagination API: " + t.getMessage() + ", boon limit checks will be skipped");
         }
     }
 
@@ -234,5 +252,7 @@ public final class MysterriaStuff extends JavaPlugin {
         return lastSprintGUI;
     }
 
-
+    public CircleOfImaginationAPI getCoiAPI() {
+        return coiAPI;
+    }
 }

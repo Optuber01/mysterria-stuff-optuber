@@ -3,6 +3,7 @@ package net.mysterria.stuff.features.coi;
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 import com.google.gson.reflect.TypeToken;
+import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
 import net.mysterria.stuff.MysterriaStuff;
 import net.mysterria.stuff.utils.PrettyLogger;
 import org.bukkit.Bukkit;
@@ -12,6 +13,9 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.scheduler.BukkitRunnable;
+
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 
 import java.io.File;
 import java.io.FileReader;
@@ -24,14 +28,13 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Listener that manages the Patriarch role for boosters
- * Fetches booster list from API and grants/removes the patriarch role accordingly
- */
 public class BoosterPatriarchListener implements Listener {
+
+    private static final String BYPASS_PERMISSION = "mysterriastuff.patriarch.bypass";
 
     private final MysterriaStuff plugin;
     private final HttpClient httpClient;
@@ -157,6 +160,8 @@ public class BoosterPatriarchListener implements Listener {
                     addPatriarchRole(player);
                 } else if (!isBooster && hasRole) {
                     removePatriarchRole(player);
+                } else if (isBooster && shouldRemovePatriarchDueToBoon(player)) {
+                    removePatriarchRole(player);
                 }
             }
 
@@ -177,24 +182,28 @@ public class BoosterPatriarchListener implements Listener {
         if (currentBoosters.contains(playerName)) {
             if (!playersWithPatriarch.contains(playerName)) {
                 addPatriarchRole(player);
+            } else if (shouldRemovePatriarchDueToBoon(player)) {
+                removePatriarchRole(player);
             }
         } else if (playersWithPatriarch.contains(playerName)) {
             removePatriarchRole(player);
         }
     }
 
-    /**
-     * Add patriarch role to a player
-     */
     private void addPatriarchRole(Player player) {
+        if (!shouldAddPatriarch(player)) {
+            PrettyLogger.debug("Skipping patriarch for " + player.getName() + " - player already has a boon");
+            return;
+        }
+        CircleOfImaginationAPI api = plugin.getCoiAPI();
         String playerName = player.getName();
-        String command = "coi outer add " + playerName + " patriarch 9";
 
         Bukkit.getScheduler().runTask(plugin, () -> {
-            boolean success = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
+            boolean success = api.addPathwayOffline(player.getUniqueId(), "patriarch", 9);
             if (success) {
                 playersWithPatriarch.add(playerName.toLowerCase());
                 savePersistedData();
+                player.sendMessage(Component.text("As a server booster, you have been granted the Patriarch boon!").color(NamedTextColor.GOLD));
                 PrettyLogger.debug("Added patriarch role to booster: " + playerName);
             } else {
                 PrettyLogger.warn("Failed to add patriarch role to: " + playerName);
@@ -202,9 +211,6 @@ public class BoosterPatriarchListener implements Listener {
         });
     }
 
-    /**
-     * Remove patriarch role from a player
-     */
     private void removePatriarchRole(Player player) {
         String playerName = player.getName();
         String command = "coi outer remove " + playerName + " patriarch";
@@ -214,11 +220,33 @@ public class BoosterPatriarchListener implements Listener {
             if (success) {
                 playersWithPatriarch.remove(playerName.toLowerCase());
                 savePersistedData();
+                player.sendMessage(Component.text("Your Patriarch boon has been removed.").color(NamedTextColor.RED));
                 PrettyLogger.debug("Removed patriarch role from: " + playerName);
             } else {
                 PrettyLogger.warn("Failed to remove patriarch role from: " + playerName);
             }
         });
+    }
+
+    private boolean shouldAddPatriarch(Player player) {
+        CircleOfImaginationAPI api = plugin.getCoiAPI();
+        if (api == null) return false; // CoI not loaded — player cannot be a beyonder
+        if (!api.isBeyonder(player)) return false; // Must have main pathway first
+        Map<String, Integer> pathways = api.getPathways(player.getName());
+        if (pathways == null || pathways.isEmpty()) return false;
+        // Exactly 1 pathway = only main pathway, no boon yet
+        return pathways.size() == 1;
+    }
+
+    private boolean shouldRemovePatriarchDueToBoon(Player player) {
+        CircleOfImaginationAPI api = plugin.getCoiAPI();
+        if (api == null) return false;
+        if (player.hasPermission(BYPASS_PERMISSION)) return false;
+        if (!api.isBeyonder(player)) return false;
+        Map<String, Integer> pathways = api.getPathways(player.getName());
+        if (pathways == null) return false;
+        // Has patriarch + at least one other boon beyond the main pathway (size > 2)
+        return pathways.containsKey("patriarch") && pathways.size() > 2;
     }
 
     /**
