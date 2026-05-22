@@ -252,6 +252,15 @@ public final class MysterriaStuff extends JavaPlugin {
     }
 
     public CircleOfImaginationAPI getCoiAPI() {
+        if (coiAPI == null) {
+            try {
+                CircleOfImaginationAPI api = Bukkit.getServer().getServicesManager().load(CircleOfImaginationAPI.class);
+                if (api != null) {
+                    coiAPI = api;
+                    PrettyLogger.info("CircleOfImagination API hooked (lazy load)");
+                }
+            } catch (Throwable ignored) {}
+        }
         return coiAPI;
     }
 
