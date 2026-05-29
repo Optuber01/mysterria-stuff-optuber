@@ -34,6 +34,7 @@ public final class MysterriaStuff extends JavaPlugin {
     private ConfigManager configManager;
     private RecipeManager recipeManager;
     private BoosterPatriarchListener boosterPatriarchListener;
+    private TargetPracticeRitualListener targetPracticeRitualListener;
     private ChatControlSessionHandler chatControlSessionHandler;
     private CoiZoneManager coiZoneManager;
     private LastSprint lastSprint;
@@ -105,6 +106,17 @@ public final class MysterriaStuff extends JavaPlugin {
             boosterPatriarchListener = new BoosterPatriarchListener(this);
             getServer().getPluginManager().registerEvents(boosterPatriarchListener, this);
             PrettyLogger.feature("CoI Booster Patriarch System");
+        }
+
+        if (configManager.isRitualFallbacksEnabled()) {
+            loadCoiApi();
+            if (getCoiAPI() != null) {
+                targetPracticeRitualListener = new TargetPracticeRitualListener(this);
+                getServer().getPluginManager().registerEvents(targetPracticeRitualListener, this);
+                PrettyLogger.feature("CoI Ritual Fallbacks");
+            } else {
+                PrettyLogger.warn("CoI ritual fallbacks enabled but CircleOfImagination API is unavailable");
+            }
         }
 
         if (configManager.isUniversalTokenEnabled()) {
