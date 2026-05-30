@@ -377,18 +377,76 @@ public class DangerousActionsListener implements Listener {
     }
 
     private boolean checkForMysticalAlignment(ItemStack item) {
-        if (item.getType() != Material.AIR) {
+        if (item != null && item.getType() != Material.AIR && item.hasItemMeta()) {
             PersistentDataContainer container = item.getItemMeta().getPersistentDataContainer();
             NamespacedKey abilityCostKey = AdventureUtil.getCoINamespacedKey("abilityCost");
             NamespacedKey shortcutKey = AdventureUtil.getCoINamespacedKey("shortcut");
             NamespacedKey fogOfHistoryKey = AdventureUtil.getCoINamespacedKey("fogOfHistory");
             NamespacedKey pathwayKey = AdventureUtil.getCoINamespacedKey("pathway");
             NamespacedKey ingredientKey = AdventureUtil.getCoINamespacedKey("ingredient");
-            if (abilityCostKey != null && shortcutKey != null && fogOfHistoryKey != null && pathwayKey != null && ingredientKey != null) {
-                return container.has(abilityCostKey) || container.has(shortcutKey) || container.has(fogOfHistoryKey) || container.has(pathwayKey) || container.has(ingredientKey);
+            NamespacedKey bloodDollKey = AdventureUtil.getCoINamespacedKey("blood-servant-doll");
+
+            boolean hasMatch = false;
+            if (abilityCostKey != null && container.has(abilityCostKey)) hasMatch = true;
+            if (shortcutKey != null && container.has(shortcutKey)) hasMatch = true;
+            if (fogOfHistoryKey != null && container.has(fogOfHistoryKey)) hasMatch = true;
+            if (pathwayKey != null && container.has(pathwayKey)) hasMatch = true;
+            if (ingredientKey != null && container.has(ingredientKey)) hasMatch = true;
+            if (bloodDollKey != null && container.has(bloodDollKey)) hasMatch = true;
+            return hasMatch;
+        }
+        return false;
+    }
+
+    private boolean containsDoll(ItemStack item) {
+        return containsDoll(item, 0);
+    }
+
+    private boolean containsDoll(ItemStack item, int depth) {
+        if (item == null || item.getType() == Material.AIR || depth > 8) return false;
+        if (item.getType() == Material.PAPER && item.hasItemMeta()) {
+            PersistentDataContainer container = item.getItemMeta().getPersistentDataContainer();
+            NamespacedKey bloodDollKey = AdventureUtil.getCoINamespacedKey("blood-servant-doll");
+            if (bloodDollKey != null && container.has(bloodDollKey)) {
+                return true;
+            }
+        }
+        if (item.getType() == Material.BUNDLE && item.hasItemMeta()) {
+            org.bukkit.inventory.meta.BundleMeta bundleMeta = (org.bukkit.inventory.meta.BundleMeta) item.getItemMeta();
+            if (bundleMeta.hasItems()) {
+                for (ItemStack bundledItem : bundleMeta.getItems()) {
+                    if (containsDoll(bundledItem, depth + 1)) return true;
+                }
             }
         }
         return false;
+    }
+
+    private boolean isForbiddenInventoryItem(ItemStack item) {
+        if (item == null || item.getType() == Material.AIR) return false;
+        return checkForMysticalAlignment(item) || containsDoll(item);
+    }
+
+    @EventHandler
+    public void onMysticalItemInventoryMove(InventoryClickEvent event) {
+        org.bukkit.inventory.InventoryView view = event.getView();
+        if (view.getType() == InventoryType.CRAFTING || view.getType() == InventoryType.CREATIVE) {
+            return;
+        }
+
+        ItemStack cursor = event.getCursor();
+        ItemStack current = event.getCurrentItem();
+        ItemStack hotbar = null;
+        if (event.getAction() == org.bukkit.event.inventory.InventoryAction.HOTBAR_SWAP || event.getAction() == org.bukkit.event.inventory.InventoryAction.HOTBAR_MOVE_AND_READD) {
+            int button = event.getHotbarButton();
+            if (button >= 0 && button < 9) {
+                hotbar = view.getBottomInventory().getItem(button);
+            }
+        }
+
+        if (isForbiddenInventoryItem(cursor) || isForbiddenInventoryItem(current) || isForbiddenInventoryItem(hotbar)) {
+            event.setCancelled(true);
+        }
     }
 
 }
