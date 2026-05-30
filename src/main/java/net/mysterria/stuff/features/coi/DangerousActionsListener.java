@@ -28,7 +28,9 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataType;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -70,12 +72,13 @@ public class DangerousActionsListener implements Listener {
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        cleanPlayerSickles(player);
 
         if (!MysterriaStuff.getInstance().getConfigManager().isResetAttributesOnJoin()) {
             return;
         }
 
-        Player player = event.getPlayer();
         resetAllAttributes(player);
     }
 
@@ -446,6 +449,55 @@ public class DangerousActionsListener implements Listener {
 
         if (isForbiddenInventoryItem(cursor) || isForbiddenInventoryItem(current) || isForbiddenInventoryItem(hotbar)) {
             event.setCancelled(true);
+        }
+    }
+
+    private void cleanPlayerSickles(Player player) {
+        try {
+            Inventory inventory = player.getInventory();
+            ItemStack[] contents = inventory.getContents();
+            boolean updated = false;
+
+            for (int i = 0; i < contents.length; i++) {
+                ItemStack item = contents[i];
+                if (item == null || item.getType() == Material.AIR) continue;
+
+                if (isBuggedSickle(item)) {
+                    sanitizeSickle(item);
+                    updated = true;
+                }
+            }
+
+            if (updated) {
+                player.updateInventory();
+                PrettyLogger.info("Successfully sanitized bugged sickles in inventory of player: " + player.getName());
+            }
+        } catch (Exception e) {
+            PrettyLogger.debug("Error while cleaning sickles for player: " + player.getName() + " - " + e.getMessage());
+        }
+    }
+
+    private boolean isBuggedSickle(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return false;
+        ItemMeta meta = item.getItemMeta();
+        PersistentDataContainer pdc = meta.getPersistentDataContainer();
+        NamespacedKey namespacedKey = new NamespacedKey("vane", "custom_item_identifier");
+        
+        if (pdc.has(namespacedKey, PersistentDataType.STRING)) {
+            String value = pdc.get(namespacedKey, PersistentDataType.STRING);
+            if (value != null && value.contains("sickle")) {
+                return meta.hasAttributeModifiers();
+            }
+        }
+        return false;
+    }
+
+    private void sanitizeSickle(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return;
+        ItemMeta meta = item.getItemMeta();
+        if (meta.hasAttributeModifiers()) {
+            meta.setAttributeModifiers(null);
+            item.setItemMeta(meta);
         }
     }
 
