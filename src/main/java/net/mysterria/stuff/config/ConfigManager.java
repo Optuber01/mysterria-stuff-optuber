@@ -75,6 +75,10 @@ public class ConfigManager {
         return config.getBoolean("features.booster-patriarch", true);
     }
 
+    public boolean isRitualFallbacksEnabled() {
+        return config.getBoolean("features.ritual-fallbacks", true);
+    }
+
     public boolean isRecipeManagerEnabled() {
         return config.getBoolean("features.recipe-manager", true);
     }

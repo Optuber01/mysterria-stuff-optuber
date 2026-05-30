@@ -42,6 +42,10 @@ features:
   # Automatically grants/removes patriarch role based on booster status
   booster-patriarch: true
 
+  # CoI Ritual Fallbacks
+  # Handles custom ritual completion logic that is server-specific rather than pathway-specific
+  ritual-fallbacks: true
+
   # ChatControl Message Token
   # Allows players to set custom join/quit messages in ChatControl
   chatcontrol-token: true
