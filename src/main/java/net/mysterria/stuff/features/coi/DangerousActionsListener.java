@@ -455,22 +455,21 @@ public class DangerousActionsListener implements Listener {
     private void cleanPlayerSickles(Player player) {
         try {
             Inventory inventory = player.getInventory();
-            ItemStack[] contents = inventory.getContents();
             boolean updated = false;
 
-            for (int i = 0; i < contents.length; i++) {
-                ItemStack item = contents[i];
+            for (int i = 0; i < inventory.getSize(); i++) {
+                ItemStack item = inventory.getItem(i);
                 if (item == null || item.getType() == Material.AIR) continue;
 
                 if (isBuggedSickle(item)) {
-                    sanitizeSickle(item);
+                    inventory.setItem(i, null);
                     updated = true;
                 }
             }
 
             if (updated) {
                 player.updateInventory();
-                PrettyLogger.info("Successfully sanitized bugged sickles in inventory of player: " + player.getName());
+                PrettyLogger.info("Successfully removed bugged sickles in inventory of player: " + player.getName());
             }
         } catch (Exception e) {
             PrettyLogger.debug("Error while cleaning sickles for player: " + player.getName() + " - " + e.getMessage());
@@ -490,15 +489,6 @@ public class DangerousActionsListener implements Listener {
             }
         }
         return false;
-    }
-
-    private void sanitizeSickle(ItemStack item) {
-        if (item == null || !item.hasItemMeta()) return;
-        ItemMeta meta = item.getItemMeta();
-        if (meta.hasAttributeModifiers()) {
-            meta.setAttributeModifiers(null);
-            item.setItemMeta(meta);
-        }
     }
 
 }
