@@ -8,6 +8,7 @@ group = 'net.mysterria.stuff'
 version = '1.1.0'
 
 repositories {
+    mavenLocal()
     mavenCentral()
     maven {
         url = "https://repo.hibiscusmc.com/releases/"

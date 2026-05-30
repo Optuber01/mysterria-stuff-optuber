@@ -76,7 +76,7 @@ public final class TargetPracticeRitualListener implements Listener {
             return false;
         }
 
-        if (!CoiRitualAccess.hasAssignedRitual(player, targetSequence, TargetPracticeRitualTracker.TARGET_PRACTICE_ID)) {
+        if (!api.hasAssignedRitual(player, targetSequence, TargetPracticeRitualTracker.TARGET_PRACTICE_ID)) {
             return false;
         }
 
