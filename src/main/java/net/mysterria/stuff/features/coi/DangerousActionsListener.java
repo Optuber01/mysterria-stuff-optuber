@@ -28,7 +28,9 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataType;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -70,12 +72,13 @@ public class DangerousActionsListener implements Listener {
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        cleanPlayerSickles(player);
 
         if (!MysterriaStuff.getInstance().getConfigManager().isResetAttributesOnJoin()) {
             return;
         }
 
-        Player player = event.getPlayer();
         resetAllAttributes(player);
     }
 
@@ -377,15 +380,112 @@ public class DangerousActionsListener implements Listener {
     }
 
     private boolean checkForMysticalAlignment(ItemStack item) {
-        if (item.getType() != Material.AIR) {
+        if (item != null && item.getType() != Material.AIR && item.hasItemMeta()) {
             PersistentDataContainer container = item.getItemMeta().getPersistentDataContainer();
             NamespacedKey abilityCostKey = AdventureUtil.getCoINamespacedKey("abilityCost");
             NamespacedKey shortcutKey = AdventureUtil.getCoINamespacedKey("shortcut");
             NamespacedKey fogOfHistoryKey = AdventureUtil.getCoINamespacedKey("fogOfHistory");
             NamespacedKey pathwayKey = AdventureUtil.getCoINamespacedKey("pathway");
             NamespacedKey ingredientKey = AdventureUtil.getCoINamespacedKey("ingredient");
-            if (abilityCostKey != null && shortcutKey != null && fogOfHistoryKey != null && pathwayKey != null && ingredientKey != null) {
-                return container.has(abilityCostKey) || container.has(shortcutKey) || container.has(fogOfHistoryKey) || container.has(pathwayKey) || container.has(ingredientKey);
+            NamespacedKey bloodDollKey = AdventureUtil.getCoINamespacedKey("blood-servant-doll");
+
+            boolean hasMatch = false;
+            if (abilityCostKey != null && container.has(abilityCostKey)) hasMatch = true;
+            if (shortcutKey != null && container.has(shortcutKey)) hasMatch = true;
+            if (fogOfHistoryKey != null && container.has(fogOfHistoryKey)) hasMatch = true;
+            if (pathwayKey != null && container.has(pathwayKey)) hasMatch = true;
+            if (ingredientKey != null && container.has(ingredientKey)) hasMatch = true;
+            if (bloodDollKey != null && container.has(bloodDollKey)) hasMatch = true;
+            return hasMatch;
+        }
+        return false;
+    }
+
+    private boolean containsDoll(ItemStack item) {
+        return containsDoll(item, 0);
+    }
+
+    private boolean containsDoll(ItemStack item, int depth) {
+        if (item == null || item.getType() == Material.AIR || depth > 8) return false;
+        if (item.getType() == Material.PAPER && item.hasItemMeta()) {
+            PersistentDataContainer container = item.getItemMeta().getPersistentDataContainer();
+            NamespacedKey bloodDollKey = AdventureUtil.getCoINamespacedKey("blood-servant-doll");
+            if (bloodDollKey != null && container.has(bloodDollKey)) {
+                return true;
+            }
+        }
+        if (item.getType() == Material.BUNDLE && item.hasItemMeta()) {
+            org.bukkit.inventory.meta.BundleMeta bundleMeta = (org.bukkit.inventory.meta.BundleMeta) item.getItemMeta();
+            if (bundleMeta.hasItems()) {
+                for (ItemStack bundledItem : bundleMeta.getItems()) {
+                    if (containsDoll(bundledItem, depth + 1)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean isForbiddenInventoryItem(ItemStack item) {
+        if (item == null || item.getType() == Material.AIR) return false;
+        return checkForMysticalAlignment(item) || containsDoll(item);
+    }
+
+    @EventHandler
+    public void onMysticalItemInventoryMove(InventoryClickEvent event) {
+        org.bukkit.inventory.InventoryView view = event.getView();
+        if (view.getType() == InventoryType.CRAFTING || view.getType() == InventoryType.CREATIVE) {
+            return;
+        }
+
+        ItemStack cursor = event.getCursor();
+        ItemStack current = event.getCurrentItem();
+        ItemStack hotbar = null;
+        if (event.getAction() == org.bukkit.event.inventory.InventoryAction.HOTBAR_SWAP || event.getAction() == org.bukkit.event.inventory.InventoryAction.HOTBAR_MOVE_AND_READD) {
+            int button = event.getHotbarButton();
+            if (button >= 0 && button < 9) {
+                hotbar = view.getBottomInventory().getItem(button);
+            }
+        }
+
+        if (isForbiddenInventoryItem(cursor) || isForbiddenInventoryItem(current) || isForbiddenInventoryItem(hotbar)) {
+            event.setCancelled(true);
+        }
+    }
+
+    private void cleanPlayerSickles(Player player) {
+        try {
+            Inventory inventory = player.getInventory();
+            boolean updated = false;
+
+            for (int i = 0; i < inventory.getSize(); i++) {
+                ItemStack item = inventory.getItem(i);
+                if (item == null || item.getType() == Material.AIR) continue;
+
+                if (isBuggedSickle(item)) {
+                    inventory.setItem(i, null);
+                    updated = true;
+                }
+            }
+
+            if (updated) {
+                player.updateInventory();
+                PrettyLogger.info("Successfully removed bugged sickles in inventory of player: " + player.getName());
+            }
+        } catch (Exception e) {
+            PrettyLogger.debug("Error while cleaning sickles for player: " + player.getName() + " - " + e.getMessage());
+        }
+    }
+
+    private boolean isBuggedSickle(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return false;
+        ItemMeta meta = item.getItemMeta();
+        PersistentDataContainer pdc = meta.getPersistentDataContainer();
+        NamespacedKey namespacedKey = new NamespacedKey("vane", "custom_item_identifier");
+        
+        if (pdc.has(namespacedKey, PersistentDataType.STRING)) {
+            String value = pdc.get(namespacedKey, PersistentDataType.STRING);
+            if (value != null && value.contains("sickle")) {
+                return meta.hasAttributeModifiers();
             }
         }
         return false;
