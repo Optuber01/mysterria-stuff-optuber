@@ -33,11 +33,17 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 public class DangerousActionsListener implements Listener {
+
+    private static final NamespacedKey VANE_CUSTOM_ITEM_IDENTIFIER = new NamespacedKey("vane", "custom_item_identifier");
+    private static final String DIAMOND_SICKLE_ID = "vane_trifles:diamond_sickle";
+    private static final String DIAMOND_SICKLE_ATTACK_DAMAGE_ID = "vane_trifles:sickles:item_diamond_sickle_attack_damage";
+    private static final String DIAMOND_SICKLE_ATTACK_SPEED_ID = "vane_trifles:sickles:item_diamond_sickle_attack_speed";
 
 
     @EventHandler
@@ -454,18 +460,8 @@ public class DangerousActionsListener implements Listener {
 
     private void cleanPlayerSickles(Player player) {
         try {
-            Inventory inventory = player.getInventory();
-            boolean updated = false;
-
-            for (int i = 0; i < inventory.getSize(); i++) {
-                ItemStack item = inventory.getItem(i);
-                if (item == null || item.getType() == Material.AIR) continue;
-
-                if (isBuggedSickle(item)) {
-                    inventory.setItem(i, null);
-                    updated = true;
-                }
-            }
+            boolean updated = cleanLegacySickles(player.getInventory());
+            updated |= cleanLegacySickles(player.getEnderChest());
 
             if (updated) {
                 player.updateInventory();
@@ -476,18 +472,55 @@ public class DangerousActionsListener implements Listener {
         }
     }
 
-    private boolean isBuggedSickle(ItemStack item) {
-        if (item == null || !item.hasItemMeta()) return false;
-        ItemMeta meta = item.getItemMeta();
-        PersistentDataContainer pdc = meta.getPersistentDataContainer();
-        NamespacedKey namespacedKey = new NamespacedKey("vane", "custom_item_identifier");
-        
-        if (pdc.has(namespacedKey, PersistentDataType.STRING)) {
-            String value = pdc.get(namespacedKey, PersistentDataType.STRING);
-            if (value != null && value.contains("sickle")) {
-                return meta.hasAttributeModifiers();
+    private boolean cleanLegacySickles(Inventory inventory) {
+        boolean updated = false;
+
+        for (int i = 0; i < inventory.getSize(); i++) {
+            ItemStack item = inventory.getItem(i);
+            if (item == null || item.getType() == Material.AIR) continue;
+
+            if (isBuggedSickle(item)) {
+                inventory.setItem(i, null);
+                updated = true;
             }
         }
+
+        return updated;
+    }
+
+    private boolean isBuggedSickle(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return false;
+        if (item.getType() != Material.DIAMOND_HOE) return false;
+
+        ItemMeta meta = item.getItemMeta();
+        PersistentDataContainer pdc = meta.getPersistentDataContainer();
+        String value = pdc.get(VANE_CUSTOM_ITEM_IDENTIFIER, PersistentDataType.STRING);
+        if (!DIAMOND_SICKLE_ID.equals(value)) {
+            return false;
+        }
+
+        Collection<AttributeModifier> modifiers = meta.getAttributeModifiers(Attribute.ATTACK_DAMAGE);
+        if (hasNonZeroLegacySickleModifier(modifiers, DIAMOND_SICKLE_ATTACK_DAMAGE_ID)) {
+            return true;
+        }
+
+        modifiers = meta.getAttributeModifiers(Attribute.ATTACK_SPEED);
+        return hasNonZeroLegacySickleModifier(modifiers, DIAMOND_SICKLE_ATTACK_SPEED_ID);
+    }
+
+    private boolean hasNonZeroLegacySickleModifier(Collection<AttributeModifier> modifiers, String modifierId) {
+        if (modifiers == null || modifiers.isEmpty()) {
+            return false;
+        }
+
+        for (AttributeModifier modifier : modifiers) {
+            if (modifier.getKey() != null
+                    && modifierId.equals(modifier.getKey().asString())
+                    && modifier.getAmount() != 0.0D) {
+                return true;
+            }
+        }
+
         return false;
     }
 
