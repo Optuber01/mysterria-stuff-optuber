@@ -439,7 +439,9 @@ public class DangerousActionsListener implements Listener {
     @EventHandler
     public void onMysticalItemInventoryMove(InventoryClickEvent event) {
         org.bukkit.inventory.InventoryView view = event.getView();
-        if (view.getType() == InventoryType.CRAFTING || view.getType() == InventoryType.CREATIVE) {
+        if (view.getType() == InventoryType.CRAFTING || view.getType() == InventoryType.CREATIVE
+                || view.getType() == InventoryType.CHEST || view.getType() == InventoryType.ENDER_CHEST
+                || view.getType() == InventoryType.SHULKER_BOX || view.getType() == InventoryType.BARREL) {
             return;
         }
 
