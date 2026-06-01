@@ -25,14 +25,14 @@ public class ChatControlSessionHandler implements Listener {
 
     private final MysterriaStuff plugin;
     private final ChatControlMessageManager manager;
-    private final ChatControlFileWriter fileWriter;
+    private final JoinQuitMessageStore store;
     private final Map<UUID, PlayerSession> activeSessions;
     private final LegacyComponentSerializer serializer;
 
-    public ChatControlSessionHandler(MysterriaStuff plugin) {
+    public ChatControlSessionHandler(MysterriaStuff plugin, JoinQuitMessageStore store) {
         this.plugin = plugin;
         this.manager = ChatControlMessageManager.getInstance();
-        this.fileWriter = new ChatControlFileWriter(plugin);
+        this.store = store;
         this.activeSessions = new HashMap<>();
         this.serializer = LegacyComponentSerializer.builder().character('&').build();
     }
@@ -225,15 +225,11 @@ public class ChatControlSessionHandler implements Listener {
 
         player.sendMessage(manager.getMessage("processing"));
 
-        boolean success = fileWriter.writePlayerMessages(
+        store.writePlayerMessages(
                 player,
                 session.getJoinMessage(),
                 session.getQuitMessage()
         );
-
-        if (!success) {
-            player.sendMessage(manager.getMessage("write-error"));
-        }
 
     }
 

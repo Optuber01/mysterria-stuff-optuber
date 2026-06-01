@@ -226,7 +226,7 @@ chatcontrol-token:
     use-buttons: "&cPlease use the [✓ CONFIRM] or [✗ CANCEL] buttons!"
 
     processing: "&e⏳ Processing your messages..."
-    success: "&a&l✓ SUCCESS!\n&aYour custom join/quit messages have been set!\n&7ChatControl has been reloaded."
+    success: "&a&l✓ SUCCESS!\n&aYour custom join/quit messages have been set!"
 
     join-missing-placeholder: "&c✗ Your join message must contain &6%player%&c!\n&7Please try again."
     quit-missing-placeholder: "&c✗ Your quit message must contain &6%player%&c!\n&7Please try again."
@@ -238,9 +238,6 @@ chatcontrol-token:
     not-ready-to-confirm: "&cYou must complete all steps before confirming!"
 
     write-error: "&c✗ Failed to write your messages. Please contact an administrator."
-    reload-failed: "&cFailed to reload ChatControl. Messages were written but may not be active."
-    reload-error: "&cError while reloading ChatControl. Please contact an administrator."
-    chatcontrol-not-found: "&cChatControl plugin directory not found! Please ensure ChatControl is installed."
 
 # ═══════════════════════════════════════════════════════════════
 # Logging Settings

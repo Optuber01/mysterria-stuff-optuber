@@ -9,6 +9,8 @@ import net.mysterria.stuff.features.battlepass.NetheriteElytraBlocker;
 import net.mysterria.stuff.features.chatcontrol.ChatControlMessageManager;
 import net.mysterria.stuff.features.chatcontrol.ChatControlSessionHandler;
 import net.mysterria.stuff.features.chatcontrol.ChatControlTokenListener;
+import net.mysterria.stuff.features.chatcontrol.JoinQuitMessageListener;
+import net.mysterria.stuff.features.chatcontrol.JoinQuitMessageStore;
 import net.mysterria.stuff.features.coi.*;
 import net.mysterria.stuff.features.dungeons.DungeonWorldEnforcer;
 import net.mysterria.stuff.features.hmcwraps.UniversalTokenManager;
@@ -137,14 +139,16 @@ public final class MysterriaStuff extends JavaPlugin {
 
 
         if (configManager.isChatControlTokenEnabled()) {
-            PrettyLogger.info("Initializing ChatControl Message Token system...");
+            PrettyLogger.info("Initializing Custom Message Token system...");
             ChatControlMessageManager.initialize(this);
 
-            chatControlSessionHandler = new ChatControlSessionHandler(this);
+            JoinQuitMessageStore messageStore = new JoinQuitMessageStore(this);
+            chatControlSessionHandler = new ChatControlSessionHandler(this, messageStore);
             getServer().getPluginManager().registerEvents(chatControlSessionHandler, this);
             getServer().getPluginManager().registerEvents(new ChatControlTokenListener(chatControlSessionHandler), this);
+            getServer().getPluginManager().registerEvents(new JoinQuitMessageListener(messageStore), this);
 
-            PrettyLogger.feature("ChatControl Message Token (Custom Join/Quit Messages)");
+            PrettyLogger.feature("Custom Join/Quit Message Token");
         }
 
 
