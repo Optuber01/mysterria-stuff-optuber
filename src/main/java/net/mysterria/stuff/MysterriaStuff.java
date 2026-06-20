@@ -89,7 +89,6 @@ public final class MysterriaStuff extends JavaPlugin {
         if (configManager.isCoiProtectionEnabled()) {
             coiZoneManager = new CoiZoneManager(this, configManager.getCoiZones());
             getServer().getPluginManager().registerEvents(coiZoneManager, this);
-            getServer().getPluginManager().registerEvents(new DangerousActionsListener(), this);
             getServer().getPluginManager().registerEvents(new LeoderoStrikeListener(this), this);
             getServer().getPluginManager().registerEvents(new AmanisesListener(this), this);
             getServer().getPluginManager().registerEvents(new AucusesListener(this), this);
