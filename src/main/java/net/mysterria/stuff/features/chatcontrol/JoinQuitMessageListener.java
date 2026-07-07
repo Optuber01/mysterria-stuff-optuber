@@ -39,15 +39,10 @@ public class JoinQuitMessageListener implements Listener {
 
         // Player-specific custom message (legacy & codes)
         String custom = store.getJoinMessage(username);
-        if (custom != null) {
+        if (custom != null && !custom.isEmpty() && !custom.equals("deny") && !custom.equals("\"\"")) {
             event.joinMessage(legacy.deserialize(custom.replace("{player}", username)));
-            return;
-        }
-
-        // Server-wide default message
-        String def = store.getDefaultJoinMessage();
-        if (def != null) {
-            event.joinMessage(parseMiniMessage(def, username));
+        } else {
+            event.joinMessage(null);  // Explicitly suppress
         }
     }
 
@@ -57,15 +52,10 @@ public class JoinQuitMessageListener implements Listener {
 
         // Player-specific custom message (legacy & codes)
         String custom = store.getQuitMessage(username);
-        if (custom != null) {
+        if (custom != null && !custom.isEmpty() && !custom.equals("deny") && !custom.equals("\"\"")) {
             event.quitMessage(legacy.deserialize(custom.replace("{player}", username)));
-            return;
-        }
-
-        // Server-wide default message
-        String def = store.getDefaultQuitMessage();
-        if (def != null) {
-            event.quitMessage(parseMiniMessage(def, username));
+        } else {
+            event.quitMessage(null);  // Explicitly suppress
         }
     }
 
