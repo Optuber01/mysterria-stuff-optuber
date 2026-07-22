@@ -179,6 +179,10 @@ public class ChatControlSessionHandler implements Listener {
 
         Component buttons = confirmButton.append(Component.text("  ")).append(cancelButton);
         player.sendMessage(buttons);
+        player.sendMessage(Component.text("Can't click? Type: ", NamedTextColor.DARK_GRAY)
+                .append(Component.text("/mystuff chatcontrol-confirm", NamedTextColor.GRAY))
+                .append(Component.text(" or ", NamedTextColor.DARK_GRAY))
+                .append(Component.text("/mystuff chatcontrol-cancel", NamedTextColor.GRAY)));
         player.sendMessage(Component.empty());
 
 
@@ -192,6 +196,8 @@ public class ChatControlSessionHandler implements Listener {
                 .clickEvent(ClickEvent.runCommand("/mysterriastuff chatcontrol-cancel"))
                 .hoverEvent(HoverEvent.showText(Component.text("Click to cancel")));
         player.sendMessage(cancelButton);
+        player.sendMessage(Component.text("Can't click? Type: ", NamedTextColor.DARK_GRAY)
+                .append(Component.text("/mystuff chatcontrol-cancel", NamedTextColor.GRAY)));
         player.sendMessage(Component.empty());
     }
 
@@ -201,6 +207,8 @@ public class ChatControlSessionHandler implements Listener {
                 .clickEvent(ClickEvent.runCommand("/mysterriastuff chatcontrol-restart"))
                 .hoverEvent(HoverEvent.showText(Component.text("Click to start over")));
         player.sendMessage(restartButton);
+        player.sendMessage(Component.text("Can't click? Type: ", NamedTextColor.DARK_GRAY)
+                .append(Component.text("/mystuff chatcontrol-restart", NamedTextColor.GRAY)));
     }
 
 

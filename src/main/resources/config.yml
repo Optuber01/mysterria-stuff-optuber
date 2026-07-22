@@ -222,8 +222,8 @@ chatcontrol-token:
     quit-received: "&a✓ Quit message received!"
 
     preview-header: "&a&l━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n&e&lMessage Preview\n&a&l━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    confirm-prompt: "&7Click a button below to confirm or cancel:"
-    use-buttons: "&cPlease use the [✓ CONFIRM] or [✗ CANCEL] buttons!"
+    confirm-prompt: "&7Click a button below, or type &f/mystuff chatcontrol-confirm &7to confirm, or &f/mystuff chatcontrol-cancel &7to cancel:"
+    use-buttons: "&cPlease use the [✓ CONFIRM] or [✗ CANCEL] buttons, or type &f/mystuff chatcontrol-confirm &cor &f/mystuff chatcontrol-cancel&c!"
 
     processing: "&e⏳ Processing your messages..."
     success: "&a&l✓ SUCCESS!\n&aYour custom join/quit messages have been set!"
