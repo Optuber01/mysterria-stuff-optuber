@@ -11,13 +11,18 @@ import org.bukkit.entity.Player;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Stores custom join/quit messages keyed primarily by player UUID (immune to
@@ -113,12 +118,21 @@ public class JoinMsgStore {
             }
         }
 
-        ConfigurationSection pendingSection = yaml.getConfigurationSection("pending");
-        if (pendingSection != null) {
-            for (String key : pendingSection.getKeys(false)) {
-                ConfigurationSection s = pendingSection.getConfigurationSection(key);
-                if (s == null) continue;
-                pending.put(key.toLowerCase(), new MessageEntry(null, s.getString("name", key), s.getString("join"), s.getString("quit")));
+        // Stored as a list, NOT a map keyed by name: names are free-form (Bedrock/Floodgate
+        // accounts can start with '.', which Bukkit's config treats as a path separator when
+        // used as a section key, corrupting the file). A list sidesteps that entirely.
+        List<?> pendingList = yaml.getList("pending");
+        if (pendingList != null) {
+            for (Object raw : pendingList) {
+                if (!(raw instanceof Map<?, ?> map)) continue;
+                Object nameObj = map.get("name");
+                if (nameObj == null) continue;
+                String name = String.valueOf(nameObj);
+                Object joinObj = map.get("join");
+                Object quitObj = map.get("quit");
+                pending.put(sanitizeKey(name), new MessageEntry(null, name,
+                        joinObj != null ? String.valueOf(joinObj) : null,
+                        quitObj != null ? String.valueOf(quitObj) : null));
             }
         }
     }
@@ -137,18 +151,36 @@ public class JoinMsgStore {
             if (entry.quit != null) yaml.set(base + ".quit", entry.quit);
         }
 
-        for (Map.Entry<String, MessageEntry> e : pending.entrySet()) {
-            String base = "pending." + e.getKey();
-            MessageEntry entry = e.getValue();
-            yaml.set(base + ".name", entry.name);
-            if (entry.join != null) yaml.set(base + ".join", entry.join);
-            if (entry.quit != null) yaml.set(base + ".quit", entry.quit);
+        List<Map<String, Object>> pendingList = new ArrayList<>();
+        for (MessageEntry entry : pending.values()) {
+            Map<String, Object> map = new LinkedHashMap<>();
+            map.put("name", entry.name);
+            if (entry.join != null) map.put("join", entry.join);
+            if (entry.quit != null) map.put("quit", entry.quit);
+            pendingList.add(map);
         }
+        if (!pendingList.isEmpty()) yaml.set("pending", pendingList);
 
+        File file = getStoreFile();
         try {
-            File file = getStoreFile();
             file.getParentFile().mkdirs();
-            yaml.save(file);
+
+            // Write to a temp file and swap it in, keeping a .bak of whatever was last on disk,
+            // so a bug or crash mid-write can never silently wipe previously-saved data.
+            File tmp = new File(file.getParentFile(), file.getName() + ".tmp");
+            yaml.save(tmp);
+
+            if (file.exists()) {
+                File backup = new File(file.getParentFile(), file.getName() + ".bak");
+                Files.copy(file.toPath(), backup.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+
+            try {
+                Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+
             return true;
         } catch (IOException e) {
             PrettyLogger.warn("Failed to save join/quit message store: " + e.getMessage());
@@ -171,8 +203,10 @@ public class JoinMsgStore {
 
         PrettyLogger.info("Migrating legacy ChatControl join/quit format to the new store...");
 
-        Map<String, String> legacyJoin = new HashMap<>();
-        Map<String, String> legacyQuit = new HashMap<>();
+        // Case-insensitive so a stray case difference between join.rs/quit.rs "require"
+        // lines for the same player can't silently drop one half of their messages.
+        Map<String, String> legacyJoin = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        Map<String, String> legacyQuit = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         String[] legacyDefaultJoin = new String[1];
         String[] legacyDefaultQuit = new String[1];
         String[] legacyFirstJoin = new String[1];
@@ -203,6 +237,66 @@ public class JoinMsgStore {
         return true;
     }
 
+    /**
+     * Re-imports entries from the pre-migration ".rs.migrated" backup files
+     * (kept untouched by {@link #migrateLegacyFormat()}) that are missing or
+     * incomplete in the current store. Never overwrites an existing non-null
+     * join/quit message — only fills in gaps. Safe to run repeatedly.
+     *
+     * @return number of entries added or filled in, or -1 if no backup files exist
+     */
+    public int repairFromLegacyBackups() {
+        File dir = getMessagesDir();
+        File joinFile = new File(dir, "join.rs.migrated");
+        File quitFile = new File(dir, "quit.rs.migrated");
+
+        if (!joinFile.exists() && !quitFile.exists()) {
+            return -1;
+        }
+
+        // Case-insensitive so a stray case difference between join.rs/quit.rs "require"
+        // lines for the same player can't silently drop one half of their messages.
+        Map<String, String> legacyJoin = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        Map<String, String> legacyQuit = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        String[] unusedDefault = new String[1];
+        String[] unusedFirstJoin = new String[1];
+
+        if (joinFile.exists()) parseLegacyFile(joinFile, legacyJoin, "join", unusedDefault, unusedFirstJoin);
+        if (quitFile.exists()) parseLegacyFile(quitFile, legacyQuit, "quit", unusedDefault, null);
+
+        Set<String> names = new HashSet<>();
+        names.addAll(legacyJoin.keySet());
+        names.addAll(legacyQuit.keySet());
+
+        int recovered = 0;
+        for (String name : names) {
+            String join = legacyJoin.get(name);
+            String quit = legacyQuit.get(name);
+
+            MessageEntry existing = findByName(name);
+            if (existing == null) {
+                pending.put(sanitizeKey(name), new MessageEntry(null, name, join, quit));
+                recovered++;
+                continue;
+            }
+
+            boolean filled = false;
+            if (existing.join == null && join != null) { existing.join = join; filled = true; }
+            if (existing.quit == null && quit != null) { existing.quit = quit; filled = true; }
+            if (filled) recovered++;
+        }
+
+        if (recovered > 0) save();
+        return recovered;
+    }
+
+    private MessageEntry findByName(String name) {
+        for (MessageEntry entry : byUuid.values()) {
+            if (entry.name.equalsIgnoreCase(name)) return entry;
+        }
+        return pending.get(sanitizeKey(name));
+    }
+
     private void backupLegacyFile(File file) {
         if (!file.exists()) return;
         File backup = new File(file.getParentFile(), file.getName() + ".migrated");
@@ -211,27 +305,62 @@ public class JoinMsgStore {
         }
     }
 
+    private static final Pattern REQUIRE_SENDER_PATTERN =
+            Pattern.compile("require sender script\\s+\"\\{player}\"\\s*==\\s*\"([^\"]+)\"");
+
+    /**
+     * Parses a legacy ChatControl-style .rs file. The authoritative identity of a
+     * per-player group is whatever name its "require sender script" line checks
+     * against — NOT the group name — since group names are sometimes just informal
+     * shorthand (e.g. "group job-join-message" / require ... == "Ineedajob"). Trusting
+     * the group name instead caused entries to be filed under a key nobody could ever
+     * match at runtime.
+     * <p>
+     * Accepts "-leave-message" as a synonym for "-quit-message": some entries in the
+     * wild use that suffix and were being silently dropped entirely.
+     * <p>
+     * The first message seen for a given resolved player name wins; later duplicate/
+     * shorthand groups for the same player are ignored (matches the original engine's
+     * Stop_On_First_Match top-to-bottom rule evaluation).
+     */
     private void parseLegacyFile(File file, Map<String, String> out, String type, String[] defaultOut, String[] firstJoinOut) {
+        List<String> suffixes = type.equals("quit")
+                ? List.of("-quit-message", "-leave-message")
+                : List.of("-" + type + "-message");
+
         try {
             List<String> lines = Files.readAllLines(file.toPath());
             String currentGroup = null;
+            String currentRealName = null;
+            boolean isPlayerGroup = false;
             boolean inMessageBlock = false;
-            String suffix = "-" + type + "-message";
 
             for (String raw : lines) {
                 String line = raw.trim();
                 if (line.startsWith("group ")) {
                     String groupName = line.substring("group ".length());
+                    currentRealName = null;
+                    isPlayerGroup = false;
                     if (groupName.equals("default")) {
                         currentGroup = "default";
                     } else if (firstJoinOut != null && groupName.equals("firstjoinmessage")) {
                         currentGroup = "firstjoinmessage";
-                    } else if (groupName.endsWith(suffix)) {
-                        currentGroup = groupName.substring(0, groupName.length() - suffix.length());
                     } else {
-                        currentGroup = null;
+                        String derived = stripSuffix(groupName, suffixes);
+                        if (derived != null) {
+                            currentGroup = "player";
+                            currentRealName = derived;
+                            isPlayerGroup = true;
+                        } else {
+                            currentGroup = null;
+                        }
                     }
                     inMessageBlock = false;
+                } else if (isPlayerGroup && line.startsWith("require sender script")) {
+                    Matcher m = REQUIRE_SENDER_PATTERN.matcher(line);
+                    if (m.find()) {
+                        currentRealName = m.group(1);
+                    }
                 } else if (line.equals("message:") && currentGroup != null) {
                     inMessageBlock = true;
                 } else if (inMessageBlock && line.startsWith("- ") && currentGroup != null) {
@@ -240,8 +369,8 @@ public class JoinMsgStore {
                         defaultOut[0] = message;
                     } else if (firstJoinOut != null && currentGroup.equals("firstjoinmessage")) {
                         firstJoinOut[0] = message;
-                    } else {
-                        out.put(currentGroup, message);
+                    } else if (isPlayerGroup && currentRealName != null) {
+                        out.putIfAbsent(currentRealName, message);
                     }
                     inMessageBlock = false;
                 }
@@ -249,6 +378,15 @@ public class JoinMsgStore {
         } catch (IOException e) {
             PrettyLogger.warn("Failed to parse legacy " + type + " messages from " + file.getName() + ": " + e.getMessage());
         }
+    }
+
+    private String stripSuffix(String groupName, List<String> suffixes) {
+        for (String suffix : suffixes) {
+            if (groupName.endsWith(suffix)) {
+                return groupName.substring(0, groupName.length() - suffix.length());
+            }
+        }
+        return null;
     }
 
     // ---------------------------------------------------------------
@@ -360,6 +498,54 @@ public class JoinMsgStore {
         if (entry != null) return entry;
         String name = target.getName();
         return name != null ? pending.get(sanitizeKey(name)) : null;
+    }
+
+    /**
+     * Looks up a pending (not-yet-UUID-resolved) entry directly by name.
+     * Needed because {@link #resolveTarget(String)} can only find a player who
+     * is online, already UUID-resolved, or locally cached by Bukkit — a
+     * pending entry for someone who hasn't been seen this session (e.g. a
+     * Bedrock player restored from a backup, or set up ahead of their first
+     * join) is otherwise invisible to admin commands.
+     */
+    public MessageEntry findPendingByName(String name) {
+        return name != null ? pending.get(sanitizeKey(name)) : null;
+    }
+
+    /**
+     * Sets a message directly on a pending (name-only) entry, creating one if
+     * needed. Used as the fallback for admin commands when {@link #resolveTarget}
+     * can't produce a real player reference (never joined / not cached).
+     */
+    public SetResult setPendingMessages(String name, String joinMessage, String quitMessage) {
+        if (joinMessage != null && !joinMessage.contains("%player%")) {
+            return SetResult.MISSING_PLACEHOLDER_JOIN;
+        }
+        if (quitMessage != null && !quitMessage.contains("%player%")) {
+            return SetResult.MISSING_PLACEHOLDER_QUIT;
+        }
+
+        MessageEntry entry = pending.computeIfAbsent(sanitizeKey(name), k -> new MessageEntry(null, name, null, null));
+        entry.name = name;
+        if (joinMessage != null) entry.join = sanitize(joinMessage).replace("%player%", "{player}");
+        if (quitMessage != null) entry.quit = sanitize(quitMessage).replace("%player%", "{player}");
+
+        return save() ? SetResult.OK : SetResult.WRITE_ERROR;
+    }
+
+    public boolean removePendingMessages(String name, boolean removeJoin, boolean removeQuit) {
+        MessageEntry entry = pending.get(sanitizeKey(name));
+        if (entry == null) return false;
+
+        boolean changed = false;
+        if (removeJoin && entry.join != null) { entry.join = null; changed = true; }
+        if (removeQuit && entry.quit != null) { entry.quit = null; changed = true; }
+        if (entry.join == null && entry.quit == null) {
+            pending.remove(sanitizeKey(name));
+        }
+
+        if (changed) save();
+        return changed;
     }
 
     public List<MessageEntry> listEntries() {

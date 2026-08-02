@@ -113,6 +113,7 @@ public class MainCommand implements CommandExecutor {
         sendCommandHelp(sender, "/mystuff joinmsg default <get|set>", "View/set the server-wide default message");
         sendCommandHelp(sender, "/mystuff joinmsg firstjoin <get|set>", "View/set the first-ever-join message");
         sendCommandHelp(sender, "/mystuff joinmsg reload", "Reload the join/quit message store from disk");
+        sendCommandHelp(sender, "/mystuff joinmsg repair", "Re-import missing entries from the legacy .rs backup files");
         sendCommandHelp(sender, "/mystuff lastsprint setup", "Open the Last Sprint reward kit editor");
         sendCommandHelp(sender, "/mystuff lastsprint give <player>", "Force-give the Last Sprint kit to a player");
         sendCommandHelp(sender, "/mystuff lastsprint reset <player>", "Reset a player's Last Sprint gift status");
@@ -623,7 +624,7 @@ public class MainCommand implements CommandExecutor {
         }
 
         if (args.length < 2) {
-            sender.sendMessage(Component.text("Usage: /mystuff joinmsg <give|confirm|cancel|restart|set|get|remove|list|default|firstjoin|reload>")
+            sender.sendMessage(Component.text("Usage: /mystuff joinmsg <give|confirm|cancel|restart|set|get|remove|list|default|firstjoin|reload|repair>")
                     .color(NamedTextColor.RED));
             return true;
         }
@@ -657,13 +658,11 @@ public class MainCommand implements CommandExecutor {
                     return true;
                 }
 
+                // If resolveTarget can't produce a real player (never joined, not cached), fall back
+                // to a pending-by-name entry — created fresh if needed. It self-heals into a proper
+                // UUID entry the next time that player is actually seen online, so pre-provisioning
+                // a message for someone who hasn't joined yet (e.g. delivering a purchase) is fine.
                 OfflinePlayer target = store.resolveTarget(args[2]);
-                if (target == null) {
-                    sender.sendMessage(Component.text("Unknown player: " + args[2]
-                                    + " (they must have joined before, or provide their exact name/UUID)")
-                            .color(NamedTextColor.RED));
-                    return true;
-                }
 
                 String type = args[3].toLowerCase();
                 if (!type.equals("join") && !type.equals("quit")) {
@@ -673,14 +672,15 @@ public class MainCommand implements CommandExecutor {
                 }
 
                 String message = String.join(" ", Arrays.copyOfRange(args, 4, args.length));
-                JoinMsgStore.SetResult result = type.equals("join")
-                        ? store.setPlayerMessages(target, message, null)
-                        : store.setPlayerMessages(target, null, message);
+                JoinMsgStore.SetResult result = target != null
+                        ? (type.equals("join") ? store.setPlayerMessages(target, message, null) : store.setPlayerMessages(target, null, message))
+                        : (type.equals("join") ? store.setPendingMessages(args[2], message, null) : store.setPendingMessages(args[2], null, message));
+                String label = target != null ? displayName(target) : args[2];
 
                 switch (result) {
                     case OK -> sender.sendMessage(Component.text("Set " + type + " message for ")
                             .color(NamedTextColor.GREEN)
-                            .append(Component.text(displayName(target)).color(NamedTextColor.AQUA))
+                            .append(Component.text(label).color(NamedTextColor.AQUA))
                             .append(Component.text(".").color(NamedTextColor.GREEN)));
                     case MISSING_PLACEHOLDER_JOIN, MISSING_PLACEHOLDER_QUIT -> sender.sendMessage(
                             Component.text("Message must contain %player%!").color(NamedTextColor.RED));
@@ -697,16 +697,12 @@ public class MainCommand implements CommandExecutor {
                 }
 
                 OfflinePlayer target = store.resolveTarget(args[2]);
-                if (target == null) {
-                    sender.sendMessage(Component.text("Unknown player: " + args[2])
-                            .color(NamedTextColor.RED));
-                    return true;
-                }
-
-                JoinMsgStore.MessageEntry entry = store.getEntry(target);
+                JoinMsgStore.MessageEntry entry = target != null ? store.getEntry(target) : store.findPendingByName(args[2]);
                 if (entry == null) {
-                    sender.sendMessage(Component.text("No custom messages set for " + displayName(target) + ".")
-                            .color(NamedTextColor.GRAY));
+                    sender.sendMessage(Component.text((target != null
+                            ? "No custom messages set for " + displayName(target)
+                            : "Unknown player: " + args[2]) + ".")
+                            .color(target != null ? NamedTextColor.GRAY : NamedTextColor.RED));
                     return true;
                 }
 
@@ -725,7 +721,7 @@ public class MainCommand implements CommandExecutor {
                 }
 
                 OfflinePlayer target = store.resolveTarget(args[2]);
-                if (target == null) {
+                if (target == null && store.findPendingByName(args[2]) == null) {
                     sender.sendMessage(Component.text("Unknown player: " + args[2])
                             .color(NamedTextColor.RED));
                     return true;
@@ -744,11 +740,14 @@ public class MainCommand implements CommandExecutor {
                     }
                 }
 
-                boolean changed = store.removePlayerMessages(target, removeJoin, removeQuit);
+                boolean changed = target != null
+                        ? store.removePlayerMessages(target, removeJoin, removeQuit)
+                        : store.removePendingMessages(args[2], removeJoin, removeQuit);
+                String label = target != null ? displayName(target) : args[2];
                 Component result = (changed
                         ? Component.text("Removed message(s) for ").color(NamedTextColor.GREEN)
                         : Component.text("No messages were set for ").color(NamedTextColor.GRAY))
-                        .append(Component.text(displayName(target)).color(NamedTextColor.AQUA))
+                        .append(Component.text(label).color(NamedTextColor.AQUA))
                         .append(Component.text("."));
                 sender.sendMessage(result);
                 return true;
@@ -793,8 +792,22 @@ public class MainCommand implements CommandExecutor {
                         .color(NamedTextColor.GREEN));
                 return true;
             }
+            case "repair" -> {
+                int recovered = store.repairFromLegacyBackups();
+                if (recovered < 0) {
+                    sender.sendMessage(Component.text("No join.rs.migrated/quit.rs.migrated backup files found — nothing to repair.")
+                            .color(NamedTextColor.GRAY));
+                } else if (recovered == 0) {
+                    sender.sendMessage(Component.text("Backup files found, but the current store already has everything from them.")
+                            .color(NamedTextColor.GRAY));
+                } else {
+                    sender.sendMessage(Component.text("Recovered/filled in " + recovered + " entrie(s) from the legacy backup files.")
+                            .color(NamedTextColor.GREEN));
+                }
+                return true;
+            }
             default -> {
-                sender.sendMessage(Component.text("Usage: /mystuff joinmsg <set|get|remove|list|default|firstjoin|reload>")
+                sender.sendMessage(Component.text("Usage: /mystuff joinmsg <set|get|remove|list|default|firstjoin|reload|repair>")
                         .color(NamedTextColor.RED));
                 return true;
             }

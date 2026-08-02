@@ -22,7 +22,7 @@ public class MainCommandTabCompleter implements TabCompleter {
     );
 
     private static final List<String> JOINMSG_SUBCOMMANDS = Arrays.asList(
-            "give", "confirm", "cancel", "restart", "set", "get", "remove", "list", "default", "firstjoin", "reload"
+            "give", "confirm", "cancel", "restart", "set", "get", "remove", "list", "default", "firstjoin", "reload", "repair"
     );
 
     private static final List<String> JOINMSG_PLAYER_TARGET_SUBCOMMANDS = List.of(
