@@ -87,7 +87,11 @@ public class ConfigManager {
         return config.getBoolean("features.universal-token", true);
     }
 
-    public boolean isChatControlTokenEnabled() {
+    public boolean isJoinMsgTokenEnabled() {
+        if (config.contains("features.joinmsg-token")) {
+            return config.getBoolean("features.joinmsg-token", true);
+        }
+        // Falls back to the pre-rename key so an already-deployed config.yml keeps working untouched.
         return config.getBoolean("features.chatcontrol-token", true);
     }
 
@@ -225,15 +229,20 @@ public class ConfigManager {
     }
 
 
-    public String getChatControlTokenName() {
-        return config.getString("chatcontrol-token.item-name", "&b&lCustom Message Token");
+    public String getJoinMsgTokenName() {
+        String path = config.contains("joinmsg-token.item-name") ? "joinmsg-token" : "chatcontrol-token";
+        return config.getString(path + ".item-name", "&b&lCustom Message Token");
     }
 
-    public java.util.List<String> getChatControlTokenLore() {
-        return config.getStringList("chatcontrol-token.item-lore");
+    public java.util.List<String> getJoinMsgTokenLore() {
+        String path = config.contains("joinmsg-token.item-lore") ? "joinmsg-token" : "chatcontrol-token";
+        return config.getStringList(path + ".item-lore");
     }
 
-    public String getChatControlMessage(String key) {
+    public String getJoinMsgMessage(String key) {
+        if (config.contains("joinmsg-token.messages." + key)) {
+            return config.getString("joinmsg-token.messages." + key, "");
+        }
         return config.getString("chatcontrol-token.messages." + key, "");
     }
 

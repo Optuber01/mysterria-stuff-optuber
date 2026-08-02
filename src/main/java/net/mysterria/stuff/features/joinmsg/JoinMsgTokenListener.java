@@ -1,4 +1,4 @@
-package net.mysterria.stuff.features.chatcontrol;
+package net.mysterria.stuff.features.joinmsg;
 
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -8,13 +8,13 @@ import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 
 
-public class ChatControlTokenListener implements Listener {
+public class JoinMsgTokenListener implements Listener {
 
-    private final ChatControlMessageManager manager;
-    private final ChatControlSessionHandler sessionHandler;
+    private final JoinMsgTokenManager manager;
+    private final JoinMsgSessionHandler sessionHandler;
 
-    public ChatControlTokenListener(ChatControlSessionHandler sessionHandler) {
-        this.manager = ChatControlMessageManager.getInstance();
+    public JoinMsgTokenListener(JoinMsgSessionHandler sessionHandler) {
+        this.manager = JoinMsgTokenManager.getInstance();
         this.sessionHandler = sessionHandler;
     }
 
@@ -36,7 +36,7 @@ public class ChatControlTokenListener implements Listener {
             return;
         }
 
-        if (!player.hasPermission("mysterriastuff.chatcontrol.use")) {
+        if (!player.hasPermission("mysterriastuff.joinmsg.use")) {
             player.sendMessage(manager.getMessage("no-permission"));
             event.setCancelled(true);
             return;

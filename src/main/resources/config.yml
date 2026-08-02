@@ -46,9 +46,9 @@ features:
   # Handles custom ritual completion logic that is server-specific rather than pathway-specific
   ritual-fallbacks: true
 
-  # ChatControl Message Token
-  # Allows players to set custom join/quit messages in ChatControl
-  chatcontrol-token: true
+  # Join/Quit Message Token
+  # Allows players to set their own custom join/quit messages
+  joinmsg-token: true
 
   # Last Sprint Welcome Kit
   # Gives first-time players a configurable reward kit before The Great Reset
@@ -189,10 +189,10 @@ universal-token:
     no-permission: "&cYou don't have permission to use this!"
 
 # ═══════════════════════════════════════════════════════════════
-# ChatControl Message Token Settings
+# Join/Quit Message Token Settings
 # ═══════════════════════════════════════════════════════════════
 
-chatcontrol-token:
+joinmsg-token:
   # Token item appearance
   item-name: "&b&lCustom Message Token"
 
@@ -222,8 +222,8 @@ chatcontrol-token:
     quit-received: "&a✓ Quit message received!"
 
     preview-header: "&a&l━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n&e&lMessage Preview\n&a&l━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    confirm-prompt: "&7Click a button below, or type &f/mystuff chatcontrol-confirm &7to confirm, or &f/mystuff chatcontrol-cancel &7to cancel:"
-    use-buttons: "&cPlease use the [✓ CONFIRM] or [✗ CANCEL] buttons, or type &f/mystuff chatcontrol-confirm &cor &f/mystuff chatcontrol-cancel&c!"
+    confirm-prompt: "&7Click a button below, or type &f/mystuff joinmsg confirm &7to confirm, or &f/mystuff joinmsg cancel &7to cancel:"
+    use-buttons: "&cPlease use the [✓ CONFIRM] or [✗ CANCEL] buttons, or type &f/mystuff joinmsg confirm &cor &f/mystuff joinmsg cancel&c!"
 
     processing: "&e⏳ Processing your messages..."
     success: "&a&l✓ SUCCESS!\n&aYour custom join/quit messages have been set!"

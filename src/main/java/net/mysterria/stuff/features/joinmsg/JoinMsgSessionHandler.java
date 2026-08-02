@@ -1,4 +1,4 @@
-package net.mysterria.stuff.features.chatcontrol;
+package net.mysterria.stuff.features.joinmsg;
 
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.Component;
@@ -21,17 +21,17 @@ import java.util.Map;
 import java.util.UUID;
 
 
-public class ChatControlSessionHandler implements Listener {
+public class JoinMsgSessionHandler implements Listener {
 
     private final MysterriaStuff plugin;
-    private final ChatControlMessageManager manager;
-    private final JoinQuitMessageStore store;
+    private final JoinMsgTokenManager manager;
+    private final JoinMsgStore store;
     private final Map<UUID, PlayerSession> activeSessions;
     private final LegacyComponentSerializer serializer;
 
-    public ChatControlSessionHandler(MysterriaStuff plugin, JoinQuitMessageStore store) {
+    public JoinMsgSessionHandler(MysterriaStuff plugin, JoinMsgStore store) {
         this.plugin = plugin;
-        this.manager = ChatControlMessageManager.getInstance();
+        this.manager = JoinMsgTokenManager.getInstance();
         this.store = store;
         this.activeSessions = new HashMap<>();
         this.serializer = LegacyComponentSerializer.builder().character('&').build();
@@ -169,20 +169,20 @@ public class ChatControlSessionHandler implements Listener {
 
         Component confirmButton = Component.text("[✓ CONFIRM]", NamedTextColor.GREEN)
                 .decoration(TextDecoration.BOLD, true)
-                .clickEvent(ClickEvent.runCommand("/mysterriastuff chatcontrol-confirm"))
+                .clickEvent(ClickEvent.runCommand("/mysterriastuff joinmsg confirm"))
                 .hoverEvent(HoverEvent.showText(Component.text("Click to apply your custom messages")));
 
         Component cancelButton = Component.text("[✗ CANCEL]", NamedTextColor.RED)
                 .decoration(TextDecoration.BOLD, true)
-                .clickEvent(ClickEvent.runCommand("/mysterriastuff chatcontrol-cancel"))
+                .clickEvent(ClickEvent.runCommand("/mysterriastuff joinmsg cancel"))
                 .hoverEvent(HoverEvent.showText(Component.text("Click to cancel and discard changes")));
 
         Component buttons = confirmButton.append(Component.text("  ")).append(cancelButton);
         player.sendMessage(buttons);
         player.sendMessage(Component.text("Can't click? Type: ", NamedTextColor.DARK_GRAY)
-                .append(Component.text("/mystuff chatcontrol-confirm", NamedTextColor.GRAY))
+                .append(Component.text("/mystuff joinmsg confirm", NamedTextColor.GRAY))
                 .append(Component.text(" or ", NamedTextColor.DARK_GRAY))
-                .append(Component.text("/mystuff chatcontrol-cancel", NamedTextColor.GRAY)));
+                .append(Component.text("/mystuff joinmsg cancel", NamedTextColor.GRAY)));
         player.sendMessage(Component.empty());
 
 
@@ -193,22 +193,22 @@ public class ChatControlSessionHandler implements Listener {
 
     private void sendCancelButton(Player player) {
         Component cancelButton = Component.text("[✗ Cancel]", NamedTextColor.RED)
-                .clickEvent(ClickEvent.runCommand("/mysterriastuff chatcontrol-cancel"))
+                .clickEvent(ClickEvent.runCommand("/mysterriastuff joinmsg cancel"))
                 .hoverEvent(HoverEvent.showText(Component.text("Click to cancel")));
         player.sendMessage(cancelButton);
         player.sendMessage(Component.text("Can't click? Type: ", NamedTextColor.DARK_GRAY)
-                .append(Component.text("/mystuff chatcontrol-cancel", NamedTextColor.GRAY)));
+                .append(Component.text("/mystuff joinmsg cancel", NamedTextColor.GRAY)));
         player.sendMessage(Component.empty());
     }
 
 
     private void sendRestartButton(Player player) {
         Component restartButton = Component.text("[↻ Restart]", NamedTextColor.YELLOW)
-                .clickEvent(ClickEvent.runCommand("/mysterriastuff chatcontrol-restart"))
+                .clickEvent(ClickEvent.runCommand("/mysterriastuff joinmsg restart"))
                 .hoverEvent(HoverEvent.showText(Component.text("Click to start over")));
         player.sendMessage(restartButton);
         player.sendMessage(Component.text("Can't click? Type: ", NamedTextColor.DARK_GRAY)
-                .append(Component.text("/mystuff chatcontrol-restart", NamedTextColor.GRAY)));
+                .append(Component.text("/mystuff joinmsg restart", NamedTextColor.GRAY)));
     }
 
 
@@ -233,12 +233,18 @@ public class ChatControlSessionHandler implements Listener {
 
         player.sendMessage(manager.getMessage("processing"));
 
-        store.writePlayerMessages(
+        JoinMsgStore.SetResult result = store.setPlayerMessages(
                 player,
                 session.getJoinMessage(),
                 session.getQuitMessage()
         );
 
+        switch (result) {
+            case OK -> player.sendMessage(manager.getMessage("success"));
+            case MISSING_PLACEHOLDER_JOIN -> player.sendMessage(manager.getMessage("join-missing-placeholder"));
+            case MISSING_PLACEHOLDER_QUIT -> player.sendMessage(manager.getMessage("quit-missing-placeholder"));
+            case WRITE_ERROR -> player.sendMessage(manager.getMessage("write-error"));
+        }
     }
 
 

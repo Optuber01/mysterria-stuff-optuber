@@ -1,4 +1,4 @@
-package net.mysterria.stuff.features.chatcontrol;
+package net.mysterria.stuff.features.joinmsg;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -16,30 +16,33 @@ import java.util.ArrayList;
 import java.util.List;
 
 
-public class ChatControlMessageManager {
+public class JoinMsgTokenManager {
 
-    private static ChatControlMessageManager instance;
+    private static JoinMsgTokenManager instance;
     private final MysterriaStuff plugin;
     private final ConfigManager configManager;
     private final NamespacedKey tokenKey;
+    private final NamespacedKey legacyTokenKey;
     private final LegacyComponentSerializer serializer;
 
-    private ChatControlMessageManager(MysterriaStuff plugin) {
+    private JoinMsgTokenManager(MysterriaStuff plugin) {
         this.plugin = plugin;
         this.configManager = plugin.getConfigManager();
-        this.tokenKey = AdventureUtil.getNamespacedKey("chatcontrol_token");
+        this.tokenKey = AdventureUtil.getNamespacedKey("joinmsg_token");
+        // Recognized so tokens already handed out under the old "ChatControl" name keep working after an update.
+        this.legacyTokenKey = AdventureUtil.getNamespacedKey("chatcontrol_token");
         this.serializer = LegacyComponentSerializer.builder().character('&').build();
     }
 
 
     public static void initialize(MysterriaStuff plugin) {
         if (instance == null) {
-            instance = new ChatControlMessageManager(plugin);
+            instance = new JoinMsgTokenManager(plugin);
         }
     }
 
 
-    public static ChatControlMessageManager getInstance() {
+    public static JoinMsgTokenManager getInstance() {
         return instance;
     }
 
@@ -49,11 +52,11 @@ public class ChatControlMessageManager {
         ItemMeta meta = token.getItemMeta();
 
         if (meta != null) {
-            String nameString = configManager.getChatControlTokenName();
+            String nameString = configManager.getJoinMsgTokenName();
             Component name = serializer.deserialize(nameString);
             meta.displayName(name.decoration(TextDecoration.ITALIC, false));
 
-            List<String> loreStrings = configManager.getChatControlTokenLore();
+            List<String> loreStrings = configManager.getJoinMsgTokenLore();
             List<Component> lore = new ArrayList<>();
             for (String line : loreStrings) {
                 lore.add(serializer.deserialize(line).decoration(TextDecoration.ITALIC, false));
@@ -79,7 +82,8 @@ public class ChatControlMessageManager {
             return false;
         }
 
-        return meta.getPersistentDataContainer().has(tokenKey, PersistentDataType.BYTE);
+        return meta.getPersistentDataContainer().has(tokenKey, PersistentDataType.BYTE)
+                || meta.getPersistentDataContainer().has(legacyTokenKey, PersistentDataType.BYTE);
     }
 
 
@@ -98,13 +102,13 @@ public class ChatControlMessageManager {
 
 
     public Component getMessage(String key) {
-        String message = configManager.getChatControlMessage(key);
+        String message = configManager.getJoinMsgMessage(key);
         return serializer.deserialize(message).decoration(TextDecoration.ITALIC, false);
     }
 
 
     public Component getMessage(String key, String... placeholders) {
-        String message = configManager.getChatControlMessage(key);
+        String message = configManager.getJoinMsgMessage(key);
 
         for (int i = 0; i < placeholders.length - 1; i += 2) {
             message = message.replace("{" + placeholders[i] + "}", placeholders[i + 1]);

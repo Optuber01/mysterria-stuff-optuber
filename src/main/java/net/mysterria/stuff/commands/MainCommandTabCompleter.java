@@ -18,7 +18,23 @@ public class MainCommandTabCompleter implements TabCompleter {
 
     private static final List<String> MAIN_COMMANDS = Arrays.asList(
             "help", "info", "status", "reload", "give", "export", "debug", "recipe", "token",
-            "chatcontrol", "chatcontrol-confirm", "chatcontrol-cancel", "chatcontrol-restart", "lastsprint", "booster"
+            "joinmsg", "lastsprint", "booster"
+    );
+
+    private static final List<String> JOINMSG_SUBCOMMANDS = Arrays.asList(
+            "give", "confirm", "cancel", "restart", "set", "get", "remove", "list", "default", "firstjoin", "reload"
+    );
+
+    private static final List<String> JOINMSG_PLAYER_TARGET_SUBCOMMANDS = List.of(
+            "give", "set", "get", "remove"
+    );
+
+    private static final List<String> JOINMSG_TYPES = List.of(
+            "join", "quit"
+    );
+
+    private static final List<String> JOINMSG_GET_SET = List.of(
+            "get", "set"
     );
 
     private static final List<String> BOOSTER_SUBCOMMANDS = Arrays.asList(
@@ -38,10 +54,6 @@ public class MainCommandTabCompleter implements TabCompleter {
     );
 
     private static final List<String> TOKEN_SUBCOMMANDS = List.of(
-            "give"
-    );
-
-    private static final List<String> CHATCONTROL_SUBCOMMANDS = List.of(
             "give"
     );
 
@@ -65,8 +77,8 @@ public class MainCommandTabCompleter implements TabCompleter {
                 case "token" -> {
                     return filterStartingWith(TOKEN_SUBCOMMANDS, args[1]);
                 }
-                case "chatcontrol" -> {
-                    return filterStartingWith(CHATCONTROL_SUBCOMMANDS, args[1]);
+                case "joinmsg" -> {
+                    return filterStartingWith(JOINMSG_SUBCOMMANDS, args[1]);
                 }
                 case "lastsprint" -> {
                     return filterStartingWith(LASTSPRINT_SUBCOMMANDS, args[1]);
@@ -93,7 +105,8 @@ public class MainCommandTabCompleter implements TabCompleter {
                                 .collect(Collectors.toList()),
                         args[2]
                 );
-            } else if (args[0].equalsIgnoreCase("chatcontrol") && args[1].equalsIgnoreCase("give")) {
+            } else if (args[0].equalsIgnoreCase("joinmsg")
+                    && JOINMSG_PLAYER_TARGET_SUBCOMMANDS.contains(args[1].toLowerCase())) {
 
                 return filterStartingWith(
                         Bukkit.getOnlinePlayers().stream()
@@ -101,6 +114,10 @@ public class MainCommandTabCompleter implements TabCompleter {
                                 .collect(Collectors.toList()),
                         args[2]
                 );
+            } else if (args[0].equalsIgnoreCase("joinmsg")
+                    && (args[1].equalsIgnoreCase("default") || args[1].equalsIgnoreCase("firstjoin"))) {
+
+                return filterStartingWith(JOINMSG_GET_SET, args[2]);
             } else if (args[0].equalsIgnoreCase("lastsprint")
                     && (args[1].equalsIgnoreCase("give") || args[1].equalsIgnoreCase("reset"))) {
 
@@ -125,9 +142,17 @@ public class MainCommandTabCompleter implements TabCompleter {
             if (args[0].equalsIgnoreCase("token") && args[1].equalsIgnoreCase("give")) {
 
                 return List.of("1", "5", "10", "16", "32", "64");
-            } else if (args[0].equalsIgnoreCase("chatcontrol") && args[1].equalsIgnoreCase("give")) {
+            } else if (args[0].equalsIgnoreCase("joinmsg") && args[1].equalsIgnoreCase("give")) {
 
                 return List.of("1", "5", "10", "16", "32", "64");
+            } else if (args[0].equalsIgnoreCase("joinmsg")
+                    && (args[1].equalsIgnoreCase("set") || args[1].equalsIgnoreCase("remove"))) {
+
+                return filterStartingWith(JOINMSG_TYPES, args[3]);
+            } else if (args[0].equalsIgnoreCase("joinmsg") && args[1].equalsIgnoreCase("default")
+                    && args[2].equalsIgnoreCase("set")) {
+
+                return filterStartingWith(JOINMSG_TYPES, args[3]);
             }
         }
 

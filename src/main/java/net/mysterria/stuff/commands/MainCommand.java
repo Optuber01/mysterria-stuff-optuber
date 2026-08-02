@@ -6,9 +6,10 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.mysterria.stuff.MysterriaStuff;
-import net.mysterria.stuff.features.chatcontrol.ChatControlMessageManager;
+import net.mysterria.stuff.features.joinmsg.JoinMsgTokenManager;
 import net.mysterria.stuff.features.coi.BoosterPatriarchListener;
-import net.mysterria.stuff.features.chatcontrol.ChatControlSessionHandler;
+import net.mysterria.stuff.features.joinmsg.JoinMsgSessionHandler;
+import net.mysterria.stuff.features.joinmsg.JoinMsgStore;
 import net.mysterria.stuff.features.lastsprint.LastSprint;
 import net.mysterria.stuff.features.lastsprint.LastSprintGUI;
 import net.mysterria.stuff.features.hmcwraps.UniversalTokenManager;
@@ -16,6 +17,7 @@ import net.mysterria.stuff.utils.PrettyLogger;
 import net.mysterria.stuff.utils.StaticItems;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -23,7 +25,9 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.Arrays;
 import java.util.Base64;
+import java.util.Comparator;
 
 
 public class MainCommand implements CommandExecutor {
@@ -61,17 +65,8 @@ public class MainCommand implements CommandExecutor {
             case "token" -> {
                 return handleToken(sender, args);
             }
-            case "chatcontrol" -> {
-                return handleChatControl(sender, args);
-            }
-            case "chatcontrol-confirm" -> {
-                return handleChatControlConfirm(sender);
-            }
-            case "chatcontrol-cancel" -> {
-                return handleChatControlCancel(sender);
-            }
-            case "chatcontrol-restart" -> {
-                return handleChatControlRestart(sender);
+            case "joinmsg" -> {
+                return handleJoinMsg(sender, args);
             }
             case "lastsprint" -> {
                 return handleLastSprint(sender, args);
@@ -110,7 +105,14 @@ public class MainCommand implements CommandExecutor {
         sendCommandHelp(sender, "/mystuff export", "Export held item as bytes");
         sendCommandHelp(sender, "/mystuff recipe <list|reload>", "Manage custom recipes");
         sendCommandHelp(sender, "/mystuff token give <player> [amount]", "Give universal tokens");
-        sendCommandHelp(sender, "/mystuff chatcontrol give <player> [amount]", "Give ChatControl message tokens");
+        sendCommandHelp(sender, "/mystuff joinmsg give <player> [amount]", "Give a Join/Quit Message token");
+        sendCommandHelp(sender, "/mystuff joinmsg set <player> <join|quit> <message>", "Set a player's join/quit message");
+        sendCommandHelp(sender, "/mystuff joinmsg get <player>", "View a player's join/quit messages");
+        sendCommandHelp(sender, "/mystuff joinmsg remove <player> [join|quit]", "Remove a player's join/quit message(s)");
+        sendCommandHelp(sender, "/mystuff joinmsg list", "List all configured join/quit messages");
+        sendCommandHelp(sender, "/mystuff joinmsg default <get|set>", "View/set the server-wide default message");
+        sendCommandHelp(sender, "/mystuff joinmsg firstjoin <get|set>", "View/set the first-ever-join message");
+        sendCommandHelp(sender, "/mystuff joinmsg reload", "Reload the join/quit message store from disk");
         sendCommandHelp(sender, "/mystuff lastsprint setup", "Open the Last Sprint reward kit editor");
         sendCommandHelp(sender, "/mystuff lastsprint give <player>", "Force-give the Last Sprint kit to a player");
         sendCommandHelp(sender, "/mystuff lastsprint reset <player>", "Reset a player's Last Sprint gift status");
@@ -158,6 +160,11 @@ public class MainCommand implements CommandExecutor {
         if (UniversalTokenManager.getInstance() != null) {
             UniversalTokenManager.getInstance().reload();
             PrettyLogger.info("Reloaded HMCWraps category mappings");
+        }
+
+        if (MysterriaStuff.getInstance().getJoinMsgStore() != null) {
+            MysterriaStuff.getInstance().getJoinMsgStore().load();
+            PrettyLogger.info("Reloaded join/quit message store");
         }
 
         sender.sendMessage(Component.text("MysterriaStuff reloaded successfully!")
@@ -486,98 +493,83 @@ public class MainCommand implements CommandExecutor {
         return true;
     }
 
-    private boolean handleChatControl(CommandSender sender, String[] args) {
-        if (args.length < 2) {
-            sender.sendMessage(Component.text("Usage: /mystuff chatcontrol give <player> [amount]")
+    private boolean handleJoinMsgGive(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("mysterriastuff.joinmsg.give")) {
+            sender.sendMessage(Component.text("You don't have permission to give Join/Quit Message tokens!")
                     .color(NamedTextColor.RED));
             return true;
         }
 
-        if (args[1].equalsIgnoreCase("give")) {
-
-            if (!sender.hasPermission("mysterriastuff.chatcontrol.give")) {
-                sender.sendMessage(Component.text("You don't have permission to give ChatControl tokens!")
-                        .color(NamedTextColor.RED));
-                return true;
-            }
-
-            if (args.length < 3) {
-                sender.sendMessage(Component.text("Usage: /mystuff chatcontrol give <player> [amount]")
-                        .color(NamedTextColor.RED));
-                return true;
-            }
-
-            String playerName = args[2];
-            int amount = 1;
-
-            if (args.length >= 4) {
-                try {
-                    amount = Integer.parseInt(args[3]);
-                    if (amount < 1 || amount > 64) {
-                        sender.sendMessage(Component.text("Amount must be between 1 and 64!")
-                                .color(NamedTextColor.RED));
-                        return true;
-                    }
-                } catch (NumberFormatException e) {
-                    sender.sendMessage(Component.text("Invalid amount! Must be a number.")
-                            .color(NamedTextColor.RED));
-                    return true;
-                }
-            }
-
-            Player target = Bukkit.getPlayer(playerName);
-            if (target == null || !target.isOnline()) {
-                sender.sendMessage(Component.text("Player not found or is offline!")
-                        .color(NamedTextColor.RED));
-                return true;
-            }
-
-
-            ChatControlMessageManager manager = ChatControlMessageManager.getInstance();
-            if (manager == null) {
-                sender.sendMessage(Component.text("ChatControl Token system is not enabled!")
-                        .color(NamedTextColor.RED));
-                return true;
-            }
-
-
-            ItemStack token = manager.createToken(amount);
-
-            if (target.getInventory().firstEmpty() != -1) {
-                target.getInventory().addItem(token);
-            } else {
-                target.getWorld().dropItemNaturally(target.getLocation(), token);
-            }
-
-
-            target.sendMessage(manager.getMessage("token-received", "amount", String.valueOf(amount)));
-
-            sender.sendMessage(Component.text("Given ")
-                    .color(NamedTextColor.GREEN)
-                    .append(Component.text(playerName).color(NamedTextColor.AQUA))
-                    .append(Component.text(" " + amount + " ChatControl Message Token(s)!").color(NamedTextColor.GREEN)));
-
-            PrettyLogger.info("Gave " + playerName + " " + amount + " ChatControl Message Token(s) (by " + sender.getName() + ")");
+        if (args.length < 3) {
+            sender.sendMessage(Component.text("Usage: /mystuff joinmsg give <player> [amount]")
+                    .color(NamedTextColor.RED));
             return true;
         }
 
-        sender.sendMessage(Component.text("Unknown chatcontrol subcommand!")
-                .color(NamedTextColor.RED));
-        sender.sendMessage(Component.text("Available: give")
-                .color(NamedTextColor.GRAY));
+        String playerName = args[2];
+        int amount = 1;
+
+        if (args.length >= 4) {
+            try {
+                amount = Integer.parseInt(args[3]);
+                if (amount < 1 || amount > 64) {
+                    sender.sendMessage(Component.text("Amount must be between 1 and 64!")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+            } catch (NumberFormatException e) {
+                sender.sendMessage(Component.text("Invalid amount! Must be a number.")
+                        .color(NamedTextColor.RED));
+                return true;
+            }
+        }
+
+        Player target = Bukkit.getPlayer(playerName);
+        if (target == null || !target.isOnline()) {
+            sender.sendMessage(Component.text("Player not found or is offline!")
+                    .color(NamedTextColor.RED));
+            return true;
+        }
+
+
+        JoinMsgTokenManager manager = JoinMsgTokenManager.getInstance();
+        if (manager == null) {
+            sender.sendMessage(Component.text("Join/Quit Message Token system is not enabled!")
+                    .color(NamedTextColor.RED));
+            return true;
+        }
+
+
+        ItemStack token = manager.createToken(amount);
+
+        if (target.getInventory().firstEmpty() != -1) {
+            target.getInventory().addItem(token);
+        } else {
+            target.getWorld().dropItemNaturally(target.getLocation(), token);
+        }
+
+
+        target.sendMessage(manager.getMessage("token-received", "amount", String.valueOf(amount)));
+
+        sender.sendMessage(Component.text("Given ")
+                .color(NamedTextColor.GREEN)
+                .append(Component.text(playerName).color(NamedTextColor.AQUA))
+                .append(Component.text(" " + amount + " Join/Quit Message Token(s)!").color(NamedTextColor.GREEN)));
+
+        PrettyLogger.info("Gave " + playerName + " " + amount + " Join/Quit Message Token(s) (by " + sender.getName() + ")");
         return true;
     }
 
-    private boolean handleChatControlConfirm(CommandSender sender) {
+    private boolean handleJoinMsgConfirm(CommandSender sender) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Component.text("This command can only be used by players!")
                     .color(NamedTextColor.RED));
             return true;
         }
 
-        ChatControlSessionHandler sessionHandler = MysterriaStuff.getInstance().getChatControlSessionHandler();
+        JoinMsgSessionHandler sessionHandler = MysterriaStuff.getInstance().getJoinMsgSessionHandler();
         if (sessionHandler == null) {
-            player.sendMessage(Component.text("ChatControl Token system is not enabled!")
+            player.sendMessage(Component.text("Join/Quit Message Token system is not enabled!")
                     .color(NamedTextColor.RED));
             return true;
         }
@@ -586,16 +578,16 @@ public class MainCommand implements CommandExecutor {
         return true;
     }
 
-    private boolean handleChatControlCancel(CommandSender sender) {
+    private boolean handleJoinMsgCancel(CommandSender sender) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Component.text("This command can only be used by players!")
                     .color(NamedTextColor.RED));
             return true;
         }
 
-        ChatControlSessionHandler sessionHandler = MysterriaStuff.getInstance().getChatControlSessionHandler();
+        JoinMsgSessionHandler sessionHandler = MysterriaStuff.getInstance().getJoinMsgSessionHandler();
         if (sessionHandler == null) {
-            player.sendMessage(Component.text("ChatControl Token system is not enabled!")
+            player.sendMessage(Component.text("Join/Quit Message Token system is not enabled!")
                     .color(NamedTextColor.RED));
             return true;
         }
@@ -604,22 +596,299 @@ public class MainCommand implements CommandExecutor {
         return true;
     }
 
-    private boolean handleChatControlRestart(CommandSender sender) {
+    private boolean handleJoinMsgRestart(CommandSender sender) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(Component.text("This command can only be used by players!")
                     .color(NamedTextColor.RED));
             return true;
         }
 
-        ChatControlSessionHandler sessionHandler = MysterriaStuff.getInstance().getChatControlSessionHandler();
+        JoinMsgSessionHandler sessionHandler = MysterriaStuff.getInstance().getJoinMsgSessionHandler();
         if (sessionHandler == null) {
-            player.sendMessage(Component.text("ChatControl Token system is not enabled!")
+            player.sendMessage(Component.text("Join/Quit Message Token system is not enabled!")
                     .color(NamedTextColor.RED));
             return true;
         }
 
         sessionHandler.handleRestart(player);
         return true;
+    }
+
+    private boolean handleJoinMsg(CommandSender sender, String[] args) {
+        JoinMsgStore store = MysterriaStuff.getInstance().getJoinMsgStore();
+        if (store == null) {
+            sender.sendMessage(Component.text("Join/Quit Message Token system is not enabled!")
+                    .color(NamedTextColor.RED));
+            return true;
+        }
+
+        if (args.length < 2) {
+            sender.sendMessage(Component.text("Usage: /mystuff joinmsg <give|confirm|cancel|restart|set|get|remove|list|default|firstjoin|reload>")
+                    .color(NamedTextColor.RED));
+            return true;
+        }
+
+        switch (args[1].toLowerCase()) {
+            case "give" -> {
+                return handleJoinMsgGive(sender, args);
+            }
+            case "confirm" -> {
+                return handleJoinMsgConfirm(sender);
+            }
+            case "cancel" -> {
+                return handleJoinMsgCancel(sender);
+            }
+            case "restart" -> {
+                return handleJoinMsgRestart(sender);
+            }
+        }
+
+        if (!sender.hasPermission("mysterriastuff.joinmsg.admin")) {
+            sender.sendMessage(Component.text("You don't have permission to use this command!")
+                    .color(NamedTextColor.RED));
+            return true;
+        }
+
+        switch (args[1].toLowerCase()) {
+            case "set" -> {
+                if (args.length < 5) {
+                    sender.sendMessage(Component.text("Usage: /mystuff joinmsg set <player> <join|quit> <message>")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+
+                OfflinePlayer target = store.resolveTarget(args[2]);
+                if (target == null) {
+                    sender.sendMessage(Component.text("Unknown player: " + args[2]
+                                    + " (they must have joined before, or provide their exact name/UUID)")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+
+                String type = args[3].toLowerCase();
+                if (!type.equals("join") && !type.equals("quit")) {
+                    sender.sendMessage(Component.text("Message type must be 'join' or 'quit'")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+
+                String message = String.join(" ", Arrays.copyOfRange(args, 4, args.length));
+                JoinMsgStore.SetResult result = type.equals("join")
+                        ? store.setPlayerMessages(target, message, null)
+                        : store.setPlayerMessages(target, null, message);
+
+                switch (result) {
+                    case OK -> sender.sendMessage(Component.text("Set " + type + " message for ")
+                            .color(NamedTextColor.GREEN)
+                            .append(Component.text(displayName(target)).color(NamedTextColor.AQUA))
+                            .append(Component.text(".").color(NamedTextColor.GREEN)));
+                    case MISSING_PLACEHOLDER_JOIN, MISSING_PLACEHOLDER_QUIT -> sender.sendMessage(
+                            Component.text("Message must contain %player%!").color(NamedTextColor.RED));
+                    case WRITE_ERROR -> sender.sendMessage(
+                            Component.text("Failed to save the message store! Check console.").color(NamedTextColor.RED));
+                }
+                return true;
+            }
+            case "get" -> {
+                if (args.length < 3) {
+                    sender.sendMessage(Component.text("Usage: /mystuff joinmsg get <player>")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+
+                OfflinePlayer target = store.resolveTarget(args[2]);
+                if (target == null) {
+                    sender.sendMessage(Component.text("Unknown player: " + args[2])
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+
+                JoinMsgStore.MessageEntry entry = store.getEntry(target);
+                if (entry == null) {
+                    sender.sendMessage(Component.text("No custom messages set for " + displayName(target) + ".")
+                            .color(NamedTextColor.GRAY));
+                    return true;
+                }
+
+                sender.sendMessage(Component.text("Messages for " + entry.name + ":").color(NamedTextColor.YELLOW));
+                sender.sendMessage(Component.text("  Join: ").color(NamedTextColor.GRAY)
+                        .append(Component.text(entry.join != null ? entry.join : "(not set)").color(NamedTextColor.WHITE)));
+                sender.sendMessage(Component.text("  Quit: ").color(NamedTextColor.GRAY)
+                        .append(Component.text(entry.quit != null ? entry.quit : "(not set)").color(NamedTextColor.WHITE)));
+                return true;
+            }
+            case "remove" -> {
+                if (args.length < 3) {
+                    sender.sendMessage(Component.text("Usage: /mystuff joinmsg remove <player> [join|quit]")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+
+                OfflinePlayer target = store.resolveTarget(args[2]);
+                if (target == null) {
+                    sender.sendMessage(Component.text("Unknown player: " + args[2])
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
+
+                boolean removeJoin = true;
+                boolean removeQuit = true;
+                if (args.length >= 4) {
+                    String type = args[3].toLowerCase();
+                    removeJoin = type.equals("join");
+                    removeQuit = type.equals("quit");
+                    if (!removeJoin && !removeQuit) {
+                        sender.sendMessage(Component.text("Message type must be 'join' or 'quit'")
+                                .color(NamedTextColor.RED));
+                        return true;
+                    }
+                }
+
+                boolean changed = store.removePlayerMessages(target, removeJoin, removeQuit);
+                Component result = (changed
+                        ? Component.text("Removed message(s) for ").color(NamedTextColor.GREEN)
+                        : Component.text("No messages were set for ").color(NamedTextColor.GRAY))
+                        .append(Component.text(displayName(target)).color(NamedTextColor.AQUA))
+                        .append(Component.text("."));
+                sender.sendMessage(result);
+                return true;
+            }
+            case "list" -> {
+                var entries = store.listEntries();
+
+                Component header = Component.text("═".repeat(40)).color(TextColor.color(0xAA55FF));
+                sender.sendMessage(header);
+                sender.sendMessage(Component.text(" Custom Join/Quit Messages (" + entries.size() + ")")
+                        .color(NamedTextColor.WHITE));
+                sender.sendMessage(header);
+
+                if (entries.isEmpty()) {
+                    sender.sendMessage(Component.text("  (none configured)").color(NamedTextColor.GRAY));
+                } else {
+                    entries.stream()
+                            .sorted(Comparator.comparing(e -> e.name.toLowerCase()))
+                            .forEach(e -> {
+                                Component line = Component.text("  • ").color(NamedTextColor.DARK_GRAY)
+                                        .append(Component.text(e.name)
+                                                .color(e.uuid == null ? NamedTextColor.GRAY : NamedTextColor.AQUA));
+                                if (e.uuid == null) {
+                                    line = line.append(Component.text(" (pending)").color(NamedTextColor.DARK_GRAY));
+                                }
+                                sender.sendMessage(line);
+                            });
+                }
+
+                sender.sendMessage(header);
+                return true;
+            }
+            case "default" -> {
+                return handleJoinMsgDefault(sender, store, args);
+            }
+            case "firstjoin" -> {
+                return handleJoinMsgFirstJoin(sender, store, args);
+            }
+            case "reload" -> {
+                store.load();
+                sender.sendMessage(Component.text("Join/quit message store reloaded from disk.")
+                        .color(NamedTextColor.GREEN));
+                return true;
+            }
+            default -> {
+                sender.sendMessage(Component.text("Usage: /mystuff joinmsg <set|get|remove|list|default|firstjoin|reload>")
+                        .color(NamedTextColor.RED));
+                return true;
+            }
+        }
+    }
+
+    private boolean handleJoinMsgDefault(CommandSender sender, JoinMsgStore store, String[] args) {
+        if (args.length < 3) {
+            sender.sendMessage(Component.text("Usage: /mystuff joinmsg default <get|set> [join|quit] [message]")
+                    .color(NamedTextColor.RED));
+            return true;
+        }
+
+        if (args[2].equalsIgnoreCase("get")) {
+            sender.sendMessage(Component.text("Default join: ").color(NamedTextColor.GRAY)
+                    .append(Component.text(store.getDefaultJoinMessage() != null ? store.getDefaultJoinMessage() : "(not set)")
+                            .color(NamedTextColor.WHITE)));
+            sender.sendMessage(Component.text("Default quit: ").color(NamedTextColor.GRAY)
+                    .append(Component.text(store.getDefaultQuitMessage() != null ? store.getDefaultQuitMessage() : "(not set)")
+                            .color(NamedTextColor.WHITE)));
+            return true;
+        }
+
+        if (args[2].equalsIgnoreCase("set")) {
+            if (args.length < 5) {
+                sender.sendMessage(Component.text("Usage: /mystuff joinmsg default set <join|quit> <message>")
+                        .color(NamedTextColor.RED));
+                return true;
+            }
+
+            String type = args[3].toLowerCase();
+            if (!type.equals("join") && !type.equals("quit")) {
+                sender.sendMessage(Component.text("Message type must be 'join' or 'quit'")
+                        .color(NamedTextColor.RED));
+                return true;
+            }
+
+            String message = String.join(" ", Arrays.copyOfRange(args, 4, args.length));
+            if (!message.contains("%player%")) {
+                sender.sendMessage(Component.text("Message must contain %player%!").color(NamedTextColor.RED));
+                return true;
+            }
+
+            String stored = message.replace("%player%", "{player}");
+            if (type.equals("join")) {
+                store.setDefaultJoinMessage(stored);
+            } else {
+                store.setDefaultQuitMessage(stored);
+            }
+
+            sender.sendMessage(Component.text("Default " + type + " message updated.").color(NamedTextColor.GREEN));
+            return true;
+        }
+
+        sender.sendMessage(Component.text("Usage: /mystuff joinmsg default <get|set> [join|quit] [message]")
+                .color(NamedTextColor.RED));
+        return true;
+    }
+
+    private boolean handleJoinMsgFirstJoin(CommandSender sender, JoinMsgStore store, String[] args) {
+        if (args.length < 3) {
+            sender.sendMessage(Component.text("Usage: /mystuff joinmsg firstjoin <get|set> [message]")
+                    .color(NamedTextColor.RED));
+            return true;
+        }
+
+        if (args[2].equalsIgnoreCase("get")) {
+            sender.sendMessage(Component.text("First-join message: ").color(NamedTextColor.GRAY)
+                    .append(Component.text(store.getFirstJoinMessage() != null ? store.getFirstJoinMessage() : "(not set)")
+                            .color(NamedTextColor.WHITE)));
+            return true;
+        }
+
+        if (args[2].equalsIgnoreCase("set")) {
+            if (args.length < 4) {
+                sender.sendMessage(Component.text("Usage: /mystuff joinmsg firstjoin set <message>")
+                        .color(NamedTextColor.RED));
+                return true;
+            }
+
+            String message = String.join(" ", Arrays.copyOfRange(args, 3, args.length)).replace("%player%", "{player}");
+            store.setFirstJoinMessage(message);
+            sender.sendMessage(Component.text("First-join message updated. (Uses MiniMessage tags, e.g. <gold>, not & codes.)")
+                    .color(NamedTextColor.GREEN));
+            return true;
+        }
+
+        sender.sendMessage(Component.text("Usage: /mystuff joinmsg firstjoin <get|set> [message]")
+                .color(NamedTextColor.RED));
+        return true;
+    }
+
+    private String displayName(OfflinePlayer player) {
+        return player.getName() != null ? player.getName() : player.getUniqueId().toString();
     }
 
     private boolean handleLastSprint(CommandSender sender, String[] args) {

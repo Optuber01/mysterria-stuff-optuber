@@ -6,17 +6,13 @@ import net.mysterria.stuff.commands.MainCommand;
 import net.mysterria.stuff.commands.MainCommandTabCompleter;
 import net.mysterria.stuff.config.ConfigManager;
 import net.mysterria.stuff.features.battlepass.NetheriteElytraBlocker;
-import net.mysterria.stuff.features.chatcontrol.ChatControlMessageManager;
-import net.mysterria.stuff.features.chatcontrol.ChatControlSessionHandler;
-import net.mysterria.stuff.features.chatcontrol.ChatControlTokenListener;
-import net.mysterria.stuff.features.chatcontrol.JoinQuitMessageListener;
-import net.mysterria.stuff.features.chatcontrol.JoinQuitMessageStore;
 import net.mysterria.stuff.features.coi.*;
 import net.mysterria.stuff.features.dungeons.DungeonWorldEnforcer;
 import net.mysterria.stuff.features.hmcwraps.UniversalTokenManager;
 import net.mysterria.stuff.features.hmcwraps.listener.UniversalTokenListener;
 import net.mysterria.stuff.features.hmcwraps.listener.WrapPreviewListener;
 import net.mysterria.stuff.features.husktowns.LightningStrikeFix;
+import net.mysterria.stuff.features.joinmsg.*;
 import net.mysterria.stuff.features.lastsprint.LastSprint;
 import net.mysterria.stuff.features.lastsprint.LastSprintGUI;
 import net.mysterria.stuff.features.lastsprint.LastSprintListener;
@@ -27,6 +23,8 @@ import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.Objects;
+
 public final class MysterriaStuff extends JavaPlugin {
 
     private static MysterriaStuff instance;
@@ -36,12 +34,11 @@ public final class MysterriaStuff extends JavaPlugin {
     private ConfigManager configManager;
     private RecipeManager recipeManager;
     private BoosterPatriarchListener boosterPatriarchListener;
-    private TargetPracticeRitualListener targetPracticeRitualListener;
-    private ChatControlSessionHandler chatControlSessionHandler;
+    private JoinMsgSessionHandler joinMsgSessionHandler;
+    private JoinMsgStore joinMsgStore;
     private CoiZoneManager coiZoneManager;
     private LastSprint lastSprint;
     private LastSprintGUI lastSprintGUI;
-    private LastSprintListener lastSprintListener;
 
     public static MysterriaStuff getInstance() {
         return instance;
@@ -68,8 +65,8 @@ public final class MysterriaStuff extends JavaPlugin {
 
 
         if (getServer().getPluginCommand("mysterriastuff") != null) {
-            getServer().getPluginCommand("mysterriastuff").setExecutor(new MainCommand());
-            getServer().getPluginCommand("mysterriastuff").setTabCompleter(new MainCommandTabCompleter());
+            Objects.requireNonNull(getServer().getPluginCommand("mysterriastuff")).setExecutor(new MainCommand());
+            Objects.requireNonNull(getServer().getPluginCommand("mysterriastuff")).setTabCompleter(new MainCommandTabCompleter());
             PrettyLogger.debug("Registered main command with tab completion");
         }
 
@@ -104,7 +101,7 @@ public final class MysterriaStuff extends JavaPlugin {
 
         if (configManager.isBoosterPatriarchEnabled()) {
             loadCoiApi();
-            boosterPatriarchListener = new BoosterPatriarchListener(this);
+            BoosterPatriarchListener boosterPatriarchListener = new BoosterPatriarchListener(this);
             getServer().getPluginManager().registerEvents(boosterPatriarchListener, this);
             PrettyLogger.feature("CoI Booster Patriarch System");
         }
@@ -112,7 +109,7 @@ public final class MysterriaStuff extends JavaPlugin {
         if (configManager.isRitualFallbacksEnabled()) {
             loadCoiApi();
             if (getCoiAPI() != null) {
-                targetPracticeRitualListener = new TargetPracticeRitualListener(this);
+                TargetPracticeRitualListener targetPracticeRitualListener = new TargetPracticeRitualListener(this);
                 getServer().getPluginManager().registerEvents(targetPracticeRitualListener, this);
                 PrettyLogger.feature("CoI Ritual Fallbacks");
             } else {
@@ -137,15 +134,15 @@ public final class MysterriaStuff extends JavaPlugin {
         }
 
 
-        if (configManager.isChatControlTokenEnabled()) {
+        if (configManager.isJoinMsgTokenEnabled()) {
             PrettyLogger.info("Initializing Custom Message Token system...");
-            ChatControlMessageManager.initialize(this);
+            JoinMsgTokenManager.initialize(this);
 
-            JoinQuitMessageStore messageStore = new JoinQuitMessageStore(this);
-            chatControlSessionHandler = new ChatControlSessionHandler(this, messageStore);
-            getServer().getPluginManager().registerEvents(chatControlSessionHandler, this);
-            getServer().getPluginManager().registerEvents(new ChatControlTokenListener(chatControlSessionHandler), this);
-            getServer().getPluginManager().registerEvents(new JoinQuitMessageListener(messageStore), this);
+            joinMsgStore = new JoinMsgStore(this);
+            joinMsgSessionHandler = new JoinMsgSessionHandler(this, joinMsgStore);
+            getServer().getPluginManager().registerEvents(joinMsgSessionHandler, this);
+            getServer().getPluginManager().registerEvents(new JoinMsgTokenListener(joinMsgSessionHandler), this);
+            getServer().getPluginManager().registerEvents(new JoinMsgListener(joinMsgStore), this);
 
             PrettyLogger.feature("Custom Join/Quit Message Token");
         }
@@ -167,7 +164,7 @@ public final class MysterriaStuff extends JavaPlugin {
         if (configManager.isLastSprintEnabled()) {
             lastSprint = new LastSprint(this);
             lastSprintGUI = new LastSprintGUI(lastSprint);
-            lastSprintListener = new LastSprintListener(this, lastSprint);
+            LastSprintListener lastSprintListener = new LastSprintListener(this, lastSprint);
             getServer().getPluginManager().registerEvents(lastSprintListener, this);
             getServer().getPluginManager().registerEvents(lastSprintGUI, this);
             PrettyLogger.feature("Last Sprint Welcome Kit");
@@ -250,8 +247,12 @@ public final class MysterriaStuff extends JavaPlugin {
         return configManager;
     }
 
-    public ChatControlSessionHandler getChatControlSessionHandler() {
-        return chatControlSessionHandler;
+    public JoinMsgSessionHandler getJoinMsgSessionHandler() {
+        return joinMsgSessionHandler;
+    }
+
+    public JoinMsgStore getJoinMsgStore() {
+        return joinMsgStore;
     }
 
     public CoiZoneManager getCoiZoneManager() {
@@ -274,7 +275,8 @@ public final class MysterriaStuff extends JavaPlugin {
                     coiAPI = api;
                     PrettyLogger.info("CircleOfImagination API hooked (lazy load)");
                 }
-            } catch (Throwable ignored) {}
+            } catch (Throwable ignored) {
+            }
         }
         return coiAPI;
     }

@@ -29,9 +29,9 @@ permissions:
       mysterriastuff.token: true
       mysterriastuff.token.give: true
       mysterriastuff.token.use: true
-      mysterriastuff.chatcontrol: true
-      mysterriastuff.chatcontrol.give: true
-      mysterriastuff.chatcontrol.use: true
+      mysterriastuff.joinmsg.use: true
+      mysterriastuff.joinmsg.give: true
+      mysterriastuff.joinmsg.admin: true
       mysterriastuff.patriarch.bypass: true
 
   mysterriastuff.use:
@@ -70,17 +70,17 @@ permissions:
     description: Allows using universal tokens
     default: true
 
-  mysterriastuff.chatcontrol:
-    description: Allows using ChatControl message commands
-    default: op
-
-  mysterriastuff.chatcontrol.give:
-    description: Allows giving ChatControl message tokens to players
-    default: op
-
-  mysterriastuff.chatcontrol.use:
-    description: Allows using ChatControl message tokens to set custom join/quit messages
+  mysterriastuff.joinmsg.use:
+    description: Allows using Join/Quit Message tokens to set your own custom join/quit messages
     default: true
+
+  mysterriastuff.joinmsg.give:
+    description: Allows giving Join/Quit Message tokens to players
+    default: op
+
+  mysterriastuff.joinmsg.admin:
+    description: Allows managing any player's join/quit messages directly via /mystuff joinmsg
+    default: op
 
   mysterriastuff.patriarch.bypass:
     description: Allows bypassing the boon limit check, keeping patriarch even when another boon is present
