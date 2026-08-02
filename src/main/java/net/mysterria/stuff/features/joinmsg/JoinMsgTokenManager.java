@@ -2,7 +2,6 @@ package net.mysterria.stuff.features.joinmsg;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.TextDecoration;
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.mysterria.stuff.MysterriaStuff;
 import net.mysterria.stuff.config.ConfigManager;
 import net.mysterria.stuff.utils.AdventureUtil;
@@ -23,7 +22,6 @@ public class JoinMsgTokenManager {
     private final ConfigManager configManager;
     private final NamespacedKey tokenKey;
     private final NamespacedKey legacyTokenKey;
-    private final LegacyComponentSerializer serializer;
 
     private JoinMsgTokenManager(MysterriaStuff plugin) {
         this.plugin = plugin;
@@ -31,7 +29,6 @@ public class JoinMsgTokenManager {
         this.tokenKey = AdventureUtil.getNamespacedKey("joinmsg_token");
         // Recognized so tokens already handed out under the old "ChatControl" name keep working after an update.
         this.legacyTokenKey = AdventureUtil.getNamespacedKey("chatcontrol_token");
-        this.serializer = LegacyComponentSerializer.builder().character('&').build();
     }
 
 
@@ -53,13 +50,13 @@ public class JoinMsgTokenManager {
 
         if (meta != null) {
             String nameString = configManager.getJoinMsgTokenName();
-            Component name = serializer.deserialize(nameString);
+            Component name = AdventureUtil.parseUniversal(nameString);
             meta.displayName(name.decoration(TextDecoration.ITALIC, false));
 
             List<String> loreStrings = configManager.getJoinMsgTokenLore();
             List<Component> lore = new ArrayList<>();
             for (String line : loreStrings) {
-                lore.add(serializer.deserialize(line).decoration(TextDecoration.ITALIC, false));
+                lore.add(AdventureUtil.parseUniversal(line).decoration(TextDecoration.ITALIC, false));
             }
             meta.lore(lore);
 
@@ -103,7 +100,7 @@ public class JoinMsgTokenManager {
 
     public Component getMessage(String key) {
         String message = configManager.getJoinMsgMessage(key);
-        return serializer.deserialize(message).decoration(TextDecoration.ITALIC, false);
+        return AdventureUtil.parseUniversal(message).decoration(TextDecoration.ITALIC, false);
     }
 
 
@@ -114,7 +111,7 @@ public class JoinMsgTokenManager {
             message = message.replace("{" + placeholders[i] + "}", placeholders[i + 1]);
         }
 
-        return serializer.deserialize(message).decoration(TextDecoration.ITALIC, false);
+        return AdventureUtil.parseUniversal(message).decoration(TextDecoration.ITALIC, false);
     }
 
 

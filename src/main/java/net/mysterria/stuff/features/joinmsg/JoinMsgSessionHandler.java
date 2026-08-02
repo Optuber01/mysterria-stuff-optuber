@@ -6,9 +6,9 @@ import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.mysterria.stuff.MysterriaStuff;
+import net.mysterria.stuff.utils.AdventureUtil;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -27,14 +27,12 @@ public class JoinMsgSessionHandler implements Listener {
     private final JoinMsgTokenManager manager;
     private final JoinMsgStore store;
     private final Map<UUID, PlayerSession> activeSessions;
-    private final LegacyComponentSerializer serializer;
 
     public JoinMsgSessionHandler(MysterriaStuff plugin, JoinMsgStore store) {
         this.plugin = plugin;
         this.manager = JoinMsgTokenManager.getInstance();
         this.store = store;
         this.activeSessions = new HashMap<>();
-        this.serializer = LegacyComponentSerializer.builder().character('&').build();
     }
 
 
@@ -151,14 +149,14 @@ public class JoinMsgSessionHandler implements Listener {
 
         String joinWithName = session.getJoinMessage().replace("%player%", player.getName());
         Component joinPreview = Component.text("Join: ", NamedTextColor.GRAY)
-                .append(serializer.deserialize(joinWithName)
+                .append(AdventureUtil.parseUniversal(joinWithName)
                         .decoration(TextDecoration.ITALIC, false));
         player.sendMessage(joinPreview);
 
 
         String quitWithName = session.getQuitMessage().replace("%player%", player.getName());
         Component quitPreview = Component.text("Quit: ", NamedTextColor.GRAY)
-                .append(serializer.deserialize(quitWithName)
+                .append(AdventureUtil.parseUniversal(quitWithName)
                         .decoration(TextDecoration.ITALIC, false));
         player.sendMessage(quitPreview);
 

@@ -2,7 +2,6 @@ package net.mysterria.stuff.features.hmcwraps;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.TextDecoration;
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.mysterria.stuff.MysterriaStuff;
 import net.mysterria.stuff.config.ConfigManager;
 import net.mysterria.stuff.utils.AdventureUtil;
@@ -22,14 +21,12 @@ public class UniversalTokenManager {
     private final MysterriaStuff plugin;
     private final ConfigManager configManager;
     private final NamespacedKey tokenKey;
-    private final LegacyComponentSerializer serializer;
     private WrapCategoryMapper categoryMapper;
 
     private UniversalTokenManager(MysterriaStuff plugin) {
         this.plugin = plugin;
         this.configManager = plugin.getConfigManager();
         this.tokenKey = AdventureUtil.getNamespacedKey("universal_token");
-        this.serializer = LegacyComponentSerializer.builder().character('&').build();
         this.categoryMapper = new WrapCategoryMapper(plugin);
     }
 
@@ -52,13 +49,13 @@ public class UniversalTokenManager {
 
         if (meta != null) {
             String nameString = configManager.getTokenItemName();
-            Component name = serializer.deserialize(nameString);
+            Component name = AdventureUtil.parseUniversal(nameString);
             meta.displayName(name.decoration(TextDecoration.ITALIC, false));
 
             List<String> loreStrings = configManager.getTokenItemLore();
             List<Component> lore = new ArrayList<>();
             for (String line : loreStrings) {
-                lore.add(serializer.deserialize(line).decoration(TextDecoration.ITALIC, false));
+                lore.add(AdventureUtil.parseUniversal(line).decoration(TextDecoration.ITALIC, false));
             }
             meta.lore(lore);
 
@@ -101,7 +98,7 @@ public class UniversalTokenManager {
 
     public Component getMessage(String key) {
         String message = configManager.getTokenMessage(key);
-        return serializer.deserialize(message).decoration(TextDecoration.ITALIC, false);
+        return AdventureUtil.parseUniversal(message).decoration(TextDecoration.ITALIC, false);
     }
 
 
@@ -112,7 +109,7 @@ public class UniversalTokenManager {
             message = message.replace("{" + placeholders[i] + "}", placeholders[i + 1]);
         }
 
-        return serializer.deserialize(message).decoration(TextDecoration.ITALIC, false);
+        return AdventureUtil.parseUniversal(message).decoration(TextDecoration.ITALIC, false);
     }
 
 
