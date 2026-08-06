@@ -11,6 +11,7 @@ import net.mysterria.stuff.features.dungeons.DungeonWorldEnforcer;
 import net.mysterria.stuff.features.chat.ChatAliasIntegration;
 import net.mysterria.stuff.features.chat.ZelChatAliasIntegration;
 import net.mysterria.stuff.features.entities.CamelAiListener;
+import net.mysterria.stuff.features.entities.SkeletonHorseListener;
 import net.mysterria.stuff.features.hmcwraps.UniversalTokenManager;
 import net.mysterria.stuff.features.hmcwraps.listener.UniversalTokenListener;
 import net.mysterria.stuff.features.hmcwraps.listener.WrapPreviewListener;
@@ -87,6 +88,9 @@ public final class MysterriaStuff extends JavaPlugin {
         getServer().getPluginManager().registerEvents(camelAiListener, this);
         camelAiListener.restoreAlreadyLoadedCamels();
         PrettyLogger.feature("Camel AI restoration");
+
+        getServer().getPluginManager().registerEvents(new SkeletonHorseListener(), this);
+        PrettyLogger.feature("Skeleton horse taming");
 
         if (configManager.isElytraBlockerEnabled()) {
             getServer().getPluginManager().registerEvents(new NetheriteElytraBlocker(), this);
