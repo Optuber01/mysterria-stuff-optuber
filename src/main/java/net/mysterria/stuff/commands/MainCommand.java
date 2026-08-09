@@ -149,6 +149,7 @@ public class MainCommand implements CommandExecutor {
 
 
         MysterriaStuff.getInstance().getConfigManager().reloadConfig();
+        MysterriaStuff.getInstance().reloadChatAliasIntegration();
 
 
         PrettyLogger.setDebugMode(MysterriaStuff.getInstance().getConfigManager().isDebugMode());

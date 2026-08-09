@@ -8,6 +8,7 @@ import org.bukkit.configuration.file.FileConfiguration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashMap;
 
 
 public class ConfigManager {
@@ -101,6 +102,26 @@ public class ConfigManager {
 
     public boolean isDungeonWorldEnforcerEnabled() {
         return config.getBoolean("features.dungeon-world-enforcer", true);
+    }
+
+    public boolean isChatAliasesEnabled() {
+        return config.getBoolean("features.chat-aliases", true);
+    }
+
+    public Map<String, String> getChatAliases() {
+        Map<String, String> aliases = new LinkedHashMap<>();
+        var section = config.getConfigurationSection("chat-aliases.aliases");
+        if (section == null) {
+            return aliases;
+        }
+
+        for (String alias : section.getKeys(false)) {
+            String command = section.getString(alias);
+            if (command != null) {
+                aliases.put(alias, command);
+            }
+        }
+        return aliases;
     }
 
     public String getDungeonWorldName() {

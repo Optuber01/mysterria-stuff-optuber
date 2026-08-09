@@ -8,6 +8,8 @@ import net.mysterria.stuff.config.ConfigManager;
 import net.mysterria.stuff.features.battlepass.NetheriteElytraBlocker;
 import net.mysterria.stuff.features.coi.*;
 import net.mysterria.stuff.features.dungeons.DungeonWorldEnforcer;
+import net.mysterria.stuff.features.chat.ChatAliasIntegration;
+import net.mysterria.stuff.features.chat.ZelChatAliasIntegration;
 import net.mysterria.stuff.features.hmcwraps.UniversalTokenManager;
 import net.mysterria.stuff.features.hmcwraps.listener.UniversalTokenListener;
 import net.mysterria.stuff.features.hmcwraps.listener.WrapPreviewListener;
@@ -39,6 +41,7 @@ public final class MysterriaStuff extends JavaPlugin {
     private CoiZoneManager coiZoneManager;
     private LastSprint lastSprint;
     private LastSprintGUI lastSprintGUI;
+    private ChatAliasIntegration chatAliasIntegration;
 
     public static MysterriaStuff getInstance() {
         return instance;
@@ -170,6 +173,8 @@ public final class MysterriaStuff extends JavaPlugin {
             PrettyLogger.feature("Last Sprint Welcome Kit");
         }
 
+        reloadChatAliasIntegration();
+
         PrettyLogger.success("MysterriaStuff enabled successfully!");
         PrettyLogger.info("Use /mystuff help for available commands");
 
@@ -227,6 +232,8 @@ public final class MysterriaStuff extends JavaPlugin {
     @Override
     public void onDisable() {
 
+        closeChatAliasIntegration();
+
         if (coiZoneManager != null) {
             coiZoneManager.shutdown();
         }
@@ -283,5 +290,43 @@ public final class MysterriaStuff extends JavaPlugin {
 
     public BoosterPatriarchListener getBoosterPatriarchListener() {
         return boosterPatriarchListener;
+    }
+
+    public void reloadChatAliasIntegration() {
+        if (!configManager.isChatAliasesEnabled()) {
+            closeChatAliasIntegration();
+            return;
+        }
+
+        Plugin zelChat = getServer().getPluginManager().getPlugin("ZelChat");
+        if (zelChat == null || !zelChat.isEnabled()) {
+            closeChatAliasIntegration();
+            PrettyLogger.warn("Chat aliases enabled but ZelChat is unavailable");
+            return;
+        }
+
+        if (chatAliasIntegration == null) {
+            try {
+                chatAliasIntegration = ZelChatAliasIntegration.register(this);
+                PrettyLogger.feature("ZelChat Channel Aliases");
+            } catch (LinkageError | RuntimeException error) {
+                PrettyLogger.error("Failed to register ZelChat channel aliases: " + error.getMessage());
+            }
+            return;
+        }
+
+        chatAliasIntegration.reload();
+    }
+
+    private void closeChatAliasIntegration() {
+        if (chatAliasIntegration == null) {
+            return;
+        }
+
+        try {
+            chatAliasIntegration.close();
+        } finally {
+            chatAliasIntegration = null;
+        }
     }
 }

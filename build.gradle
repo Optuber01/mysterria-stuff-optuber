@@ -26,6 +26,23 @@ repositories {
     }
 }
 
+sourceSets {
+    zelchatApi
+}
+
+configurations {
+    zelchatApiCompileOnly.extendsFrom compileOnly
+}
+
+def zelchatJarPath = providers.gradleProperty('zelchatJar')
+sourceSets.main.compileClasspath += zelchatJarPath.isPresent()
+        ? files(zelchatJarPath.get())
+        : sourceSets.zelchatApi.output
+
+if (!zelchatJarPath.isPresent()) {
+    tasks.compileJava.dependsOn(tasks.compileZelchatApiJava)
+}
+
 tasks.build.dependsOn(shadowJar)
 
 dependencies {
@@ -70,3 +87,18 @@ processResources {
         expand props
     }
 }
+
+tasks.register('verifyZelChatApiNotBundled') {
+    dependsOn tasks.shadowJar
+    doLast {
+        def archive = tasks.shadowJar.archiveFile.get().asFile
+        def bundled = zipTree(archive).matching {
+            include 'it/pino/zelchat/api/**'
+        }.files
+        if (!bundled.empty) {
+            throw new GradleException("ZelChat API classes must remain compile-only: ${bundled}")
+        }
+    }
+}
+
+tasks.check.dependsOn(tasks.verifyZelChatApiNotBundled)

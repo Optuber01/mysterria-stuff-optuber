@@ -61,6 +61,19 @@ features:
   # MysterriaStuff must load before the dungeon plugin — add it to 'loadbefore' in plugin.yml.
   dungeon-world-enforcer: false
 
+  # ZelChat shortcuts for canonical channel commands (for example, !c hello -> /cc hello)
+  chat-aliases: true
+
+# Chat shortcuts are matched as complete, whitespace-delimited tokens. The existing
+# ZelChat !message global-chat shortcut is left untouched.
+chat-aliases:
+  aliases:
+    c: "cc"
+    o: "oc"
+    l: "lands chat"
+    n: "nations chat"
+    p: "p"
+
 # ═══════════════════════════════════════════════════════════════
 # Dungeon World Enforcer Settings
 # ═══════════════════════════════════════════════════════════════
