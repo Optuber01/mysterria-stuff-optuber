@@ -7,6 +7,8 @@ import org.bukkit.entity.Player;
 public interface ChatMessage {
     Player getBukkitPlayer();
     MessageState getState();
+    String getRawMessage();
     Component getMessage();
+    void setMessage(Component message);
     void setState(MessageState state);
 }

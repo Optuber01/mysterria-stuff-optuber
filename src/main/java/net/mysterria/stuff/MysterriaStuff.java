@@ -22,12 +22,16 @@ import net.mysterria.stuff.features.recipes.RecipeManager;
 import net.mysterria.stuff.features.zones.CoiZoneManager;
 import net.mysterria.stuff.utils.PrettyLogger;
 import org.bukkit.Bukkit;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.server.PluginDisableEvent;
+import org.bukkit.event.server.PluginEnableEvent;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Objects;
 
-public final class MysterriaStuff extends JavaPlugin {
+public final class MysterriaStuff extends JavaPlugin implements Listener {
 
     private static MysterriaStuff instance;
 
@@ -42,6 +46,7 @@ public final class MysterriaStuff extends JavaPlugin {
     private LastSprint lastSprint;
     private LastSprintGUI lastSprintGUI;
     private ChatAliasIntegration chatAliasIntegration;
+    private boolean chatAliasRegistrationQueued;
 
     public static MysterriaStuff getInstance() {
         return instance;
@@ -75,6 +80,7 @@ public final class MysterriaStuff extends JavaPlugin {
 
 
         PrettyLogger.info("Registering event listeners...");
+        getServer().getPluginManager().registerEvents(this, this);
 
         if (configManager.isElytraBlockerEnabled()) {
             getServer().getPluginManager().registerEvents(new NetheriteElytraBlocker(), this);
@@ -173,7 +179,7 @@ public final class MysterriaStuff extends JavaPlugin {
             PrettyLogger.feature("Last Sprint Welcome Kit");
         }
 
-        reloadChatAliasIntegration();
+        scheduleChatAliasIntegrationRegistration();
 
         PrettyLogger.success("MysterriaStuff enabled successfully!");
         PrettyLogger.info("Use /mystuff help for available commands");
@@ -301,7 +307,6 @@ public final class MysterriaStuff extends JavaPlugin {
         Plugin zelChat = getServer().getPluginManager().getPlugin("ZelChat");
         if (zelChat == null || !zelChat.isEnabled()) {
             closeChatAliasIntegration();
-            PrettyLogger.warn("Chat aliases enabled but ZelChat is unavailable");
             return;
         }
 
@@ -316,6 +321,32 @@ public final class MysterriaStuff extends JavaPlugin {
         }
 
         chatAliasIntegration.reload();
+    }
+
+    @EventHandler
+    public void onPluginEnable(PluginEnableEvent event) {
+        if (event.getPlugin().getName().equalsIgnoreCase("ZelChat")) {
+            scheduleChatAliasIntegrationRegistration();
+        }
+    }
+
+    @EventHandler
+    public void onPluginDisable(PluginDisableEvent event) {
+        if (event.getPlugin().getName().equalsIgnoreCase("ZelChat")) {
+            closeChatAliasIntegration();
+        }
+    }
+
+    private void scheduleChatAliasIntegrationRegistration() {
+        if (!configManager.isChatAliasesEnabled() || chatAliasRegistrationQueued) {
+            return;
+        }
+
+        chatAliasRegistrationQueued = true;
+        getServer().getScheduler().runTask(this, () -> {
+            chatAliasRegistrationQueued = false;
+            reloadChatAliasIntegration();
+        });
     }
 
     private void closeChatAliasIntegration() {
