@@ -68,18 +68,17 @@ features:
 # configuration cannot grant a chat message arbitrary command execution.
 chat-aliases:
   aliases:
-    global: [g, global]
     church: [c, cc, church]
     organization: [o, oc, org, order]
     lands: [l, land, lands]
     nations: [n, nation, nations]
     party: [p, party, dp, dparty]
+    staff: [s, sc, staff]
     message: [m, msg, w, whisper, tell]
     reply: [r, reply]
 
-# Staff chat intentionally has no ! alias. Use ZelChat's native #<message>, or
-# /staffchat when it is enabled: ZelChat can treat # text as public when staff
-# chat is disabled or the sender lacks its staff-chat permission.
+# Global chat keeps its existing native !<message> shortcut. Staff aliases delegate to
+# ZelChat's /staffchat command, which retains ZelChat's permission and availability checks.
 
 # ═══════════════════════════════════════════════════════════════
 # Dungeon World Enforcer Settings

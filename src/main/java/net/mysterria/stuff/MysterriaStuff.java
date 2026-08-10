@@ -356,6 +356,8 @@ public final class MysterriaStuff extends JavaPlugin implements Listener {
 
         try {
             chatAliasIntegration.close();
+        } catch (LinkageError | RuntimeException error) {
+            PrettyLogger.error("Failed to unregister ZelChat channel aliases: " + error.getMessage());
         } finally {
             chatAliasIntegration = null;
         }
