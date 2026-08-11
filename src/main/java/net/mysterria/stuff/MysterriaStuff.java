@@ -31,7 +31,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Objects;
 
-public final class MysterriaStuff extends JavaPlugin implements Listener {
+public final class MysterriaStuff extends JavaPlugin {
 
     private static MysterriaStuff instance;
 
@@ -80,7 +80,7 @@ public final class MysterriaStuff extends JavaPlugin implements Listener {
 
 
         PrettyLogger.info("Registering event listeners...");
-        getServer().getPluginManager().registerEvents(this, this);
+        getServer().getPluginManager().registerEvents(new ChatAliasLifecycleListener(this), this);
 
         if (configManager.isElytraBlockerEnabled()) {
             getServer().getPluginManager().registerEvents(new NetheriteElytraBlocker(), this);
@@ -323,20 +323,6 @@ public final class MysterriaStuff extends JavaPlugin implements Listener {
         chatAliasIntegration.reload();
     }
 
-    @EventHandler
-    public void onPluginEnable(PluginEnableEvent event) {
-        if (event.getPlugin().getName().equalsIgnoreCase("ZelChat")) {
-            scheduleChatAliasIntegrationRegistration();
-        }
-    }
-
-    @EventHandler
-    public void onPluginDisable(PluginDisableEvent event) {
-        if (event.getPlugin().getName().equalsIgnoreCase("ZelChat")) {
-            closeChatAliasIntegration();
-        }
-    }
-
     private void scheduleChatAliasIntegrationRegistration() {
         if (!configManager.isChatAliasesEnabled() || chatAliasRegistrationQueued) {
             return;
@@ -360,6 +346,34 @@ public final class MysterriaStuff extends JavaPlugin implements Listener {
             PrettyLogger.error("Failed to unregister ZelChat channel aliases: " + error.getMessage());
         } finally {
             chatAliasIntegration = null;
+        }
+    }
+
+    /**
+     * Kept separate from the plugin class so Bukkit's event-method reflection does not
+     * resolve optional COI API types declared by unrelated MysterriaStuff methods before
+     * CircleOfImagination has finished loading.
+     */
+    private static final class ChatAliasLifecycleListener implements Listener {
+
+        private final MysterriaStuff plugin;
+
+        private ChatAliasLifecycleListener(MysterriaStuff plugin) {
+            this.plugin = plugin;
+        }
+
+        @EventHandler
+        public void onPluginEnable(PluginEnableEvent event) {
+            if (event.getPlugin().getName().equalsIgnoreCase("ZelChat")) {
+                plugin.scheduleChatAliasIntegrationRegistration();
+            }
+        }
+
+        @EventHandler
+        public void onPluginDisable(PluginDisableEvent event) {
+            if (event.getPlugin().getName().equalsIgnoreCase("ZelChat")) {
+                plugin.closeChatAliasIntegration();
+            }
         }
     }
 }

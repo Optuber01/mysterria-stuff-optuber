@@ -14,14 +14,11 @@ import net.mysterria.stuff.utils.PrettyLogger;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -38,12 +35,9 @@ public final class ZelChatAliasIntegration implements ChatAliasIntegration, Chat
 
     private static final Pattern SAFE_ALIAS = Pattern.compile("[a-z0-9]+");
     private static final Pattern CONTROL_CHARACTER = Pattern.compile("\\p{Cntrl}");
-    private static final Set<String> RESERVED_ALIASES = Set.of("help", "channels");
-
     private final MysterriaStuff plugin;
     private final ModuleManager moduleManager;
     private volatile Map<String, ChatShortcut> aliases = defaultAliases();
-    private volatile Map<ChatShortcut, List<String>> aliasesByRoute = defaultAliasesByRoute();
     private boolean registered;
 
     private ZelChatAliasIntegration(MysterriaStuff plugin, ModuleManager moduleManager) {
@@ -76,13 +70,11 @@ public final class ZelChatAliasIntegration implements ChatAliasIntegration, Chat
         ConfigurationSection configuredAliases = plugin.getConfigManager().getConfig()
                 .getConfigurationSection("chat-aliases.aliases");
         Map<String, ChatShortcut> reloaded = new LinkedHashMap<>();
-        Map<ChatShortcut, List<String>> reloadedByRoute = new EnumMap<>(ChatShortcut.class);
 
         for (ChatShortcut shortcut : ChatShortcut.values()) {
             List<String> configured = configuredAliases == null || !configuredAliases.contains(shortcut.routeId())
                     ? shortcut.defaultAliases()
                     : configuredAliases.getStringList(shortcut.routeId());
-            List<String> acceptedAliases = new ArrayList<>();
 
             for (String configuredAlias : configured) {
                 String alias = configuredAlias.toLowerCase(Locale.ROOT).trim();
@@ -90,25 +82,15 @@ public final class ZelChatAliasIntegration implements ChatAliasIntegration, Chat
                     PrettyLogger.warn("Ignoring invalid chat alias for " + shortcut.routeId() + ": " + configuredAlias);
                     continue;
                 }
-                if (RESERVED_ALIASES.contains(alias)) {
-                    PrettyLogger.warn("Ignoring reserved chat alias !" + alias + " for " + shortcut.routeId());
-                    continue;
-                }
                 ChatShortcut existing = reloaded.putIfAbsent(alias, shortcut);
                 if (existing != null && existing != shortcut) {
                     PrettyLogger.warn("Ignoring duplicate chat alias !" + alias + " for " + shortcut.routeId()
                             + "; it is already assigned to " + existing.routeId());
-                    continue;
-                }
-                if (existing == null) {
-                    acceptedAliases.add(alias);
                 }
             }
-            reloadedByRoute.put(shortcut, List.copyOf(acceptedAliases));
         }
 
         aliases = Collections.unmodifiableMap(reloaded);
-        aliasesByRoute = Collections.unmodifiableMap(reloadedByRoute);
         PrettyLogger.info("Loaded " + aliases.size() + " typed ZelChat chat shortcuts");
     }
 
@@ -121,11 +103,6 @@ public final class ZelChatAliasIntegration implements ChatAliasIntegration, Chat
 
         String content = chatMessage.getRawMessage();
         if (content.isEmpty()) {
-            return;
-        }
-
-        if (content.strip().equalsIgnoreCase("!help") || content.strip().equalsIgnoreCase("!channels")) {
-            cancelAndRun(chatMessage, this::sendHelp);
             return;
         }
 
@@ -145,7 +122,7 @@ public final class ZelChatAliasIntegration implements ChatAliasIntegration, Chat
 
         if (!parsed.hasValidPayload()) {
             cancelAndRun(chatMessage, player -> player.sendMessage(Component.text(
-                    "That chat shortcut requires a valid message. Use !help for usage.", NamedTextColor.RED)));
+                    "That chat shortcut requires a message.", NamedTextColor.RED)));
             return;
         }
 
@@ -215,28 +192,6 @@ public final class ZelChatAliasIntegration implements ChatAliasIntegration, Chat
         }
     }
 
-    private void sendHelp(Player player) {
-        player.sendMessage(Component.text("Chat shortcuts", NamedTextColor.GOLD));
-        player.sendMessage(Component.text("!<message> — global chat (native)", NamedTextColor.GRAY));
-        sendHelpLine(player, ChatShortcut.CHURCH, "<message> — church chat");
-        sendHelpLine(player, ChatShortcut.ORGANIZATION, "<message> — organization chat");
-        sendHelpLine(player, ChatShortcut.LANDS, "<message> — Lands chat");
-        sendHelpLine(player, ChatShortcut.NATIONS, "<message> — Nations chat");
-        sendHelpLine(player, ChatShortcut.PARTY, "<message> — dungeon party chat");
-        sendHelpLine(player, ChatShortcut.STAFF, "<message> — staff chat");
-        sendHelpLine(player, ChatShortcut.PRIVATE_MESSAGE, "<player> <message> — private message");
-        sendHelpLine(player, ChatShortcut.REPLY, "<message> — reply to the last private message");
-        player.sendMessage(Component.text("Shortcuts require a message; use the provider's normal command for chat toggles.", NamedTextColor.DARK_GRAY));
-    }
-
-    private void sendHelpLine(Player player, ChatShortcut shortcut, String usage) {
-        List<String> routeAliases = aliasesByRoute.get(shortcut);
-        if (routeAliases == null || routeAliases.isEmpty()) {
-            return;
-        }
-        player.sendMessage(Component.text("!" + routeAliases.getFirst() + " " + usage, NamedTextColor.GRAY));
-    }
-
     @Override
     public void close() {
         if (!registered) {
@@ -259,24 +214,18 @@ public final class ZelChatAliasIntegration implements ChatAliasIntegration, Chat
         return Collections.unmodifiableMap(defaults);
     }
 
-    private static Map<ChatShortcut, List<String>> defaultAliasesByRoute() {
-        Map<ChatShortcut, List<String>> defaults = new EnumMap<>(ChatShortcut.class);
-        for (ChatShortcut shortcut : ChatShortcut.values()) {
-            defaults.put(shortcut, shortcut.defaultAliases());
-        }
-        return Collections.unmodifiableMap(defaults);
-    }
-
     private enum ChatShortcut {
         CHURCH("church", "cc", "c", "cc", "church"),
         ORGANIZATION("organization", "oc", "o", "oc", "org", "order"),
         LANDS("lands", "lands chat", "l", "land", "lands"),
         NATIONS("nations", "nations chat", "n", "nation", "nations"),
-        PARTY("party", "party chat", "p", "party", "dp", "dparty"),
+        // The deployed MythicDungeons plugin registers /p as its party-chat command.
+        // /party is the separate party-management command.
+        PARTY("party", "p", "p", "party", "dp", "dparty"),
         STAFF("staff", "staffchat", "s", "sc", "staff"),
         // ZelChat's public configuration documents these command names. Delegating to
         // the commands retains ZelChat's own privacy, ignore and reply checks.
-        PRIVATE_MESSAGE("message", "msg", "m", "msg", "w", "whisper", "tell"),
+        PRIVATE_MESSAGE("message", "msg", "m", "msg", "dm", "pm", "w", "whisper", "tell"),
         REPLY("reply", "reply", "r", "reply");
 
         private final String routeId;

@@ -61,7 +61,7 @@ features:
   # MysterriaStuff must load before the dungeon plugin — add it to 'loadbefore' in plugin.yml.
   dungeon-world-enforcer: false
 
-  # ZelChat chat shortcuts (use !help in chat to see the supported destinations).
+  # ZelChat chat shortcuts.
   chat-aliases: true
 
 # Aliases are configured per fixed route. Values are never command strings, so this
@@ -74,11 +74,11 @@ chat-aliases:
     nations: [n, nation, nations]
     party: [p, party, dp, dparty]
     staff: [s, sc, staff]
-    message: [m, msg, w, whisper, tell]
+    message: [m, msg, dm, pm, w, whisper, tell]
     reply: [r, reply]
 
-# Global chat keeps its existing native !<message> shortcut. Staff aliases delegate to
-# ZelChat's /staffchat command, which retains ZelChat's permission and availability checks.
+# Global chat keeps MysterriaTranslator's existing !<message> shortcut. Staff aliases
+# delegate to ZelChat's /staffchat command, retaining its permission and availability checks.
 
 # ═══════════════════════════════════════════════════════════════
 # Dungeon World Enforcer Settings
