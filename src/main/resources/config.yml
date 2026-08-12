@@ -61,11 +61,29 @@ features:
   # MysterriaStuff must load before the dungeon plugin — add it to 'loadbefore' in plugin.yml.
   dungeon-world-enforcer: false
 
-  # ZelChat chat shortcuts.
+  # Chat Shortcuts
+  # Registers a ZelChat module that turns '!<alias> <message>' into the owning plugin's
+  # chat command, so players use one interface for every provider-owned channel.
   chat-aliases: true
 
-# Aliases are configured per fixed route. Values are never command strings, so this
-# configuration cannot grant a chat message arbitrary command execution.
+# ═══════════════════════════════════════════════════════════════
+# Chat Shortcut Settings
+# ═══════════════════════════════════════════════════════════════
+
+# Each key below is a fixed route with a hard-coded destination command; only the alias
+# list is configurable. Values are never command strings, so this configuration cannot
+# turn a chat message into arbitrary command execution.
+#
+# Rename a route by editing its list, or disable it with an empty list ([]).
+# Aliases must be lowercase letters and digits only; anything else is logged and ignored.
+# An alias claimed by two routes stays with the first route listed here.
+#
+# Global chat keeps MysterriaTranslator's existing '!<message>' shortcut — this module only
+# claims '!' messages whose first word matches an alias below, and leaves every other
+# message untouched. Local/ranged channels intentionally have no alias.
+#
+# Membership, permission, ignore and formatting rules stay with the destination plugin;
+# staff aliases go through ZelChat's /staffchat and keep its own permission checks.
 chat-aliases:
   aliases:
     church: [c, cc, church]
@@ -76,9 +94,6 @@ chat-aliases:
     staff: [s, sc, staff]
     message: [m, msg, dm, pm, w, whisper, tell]
     reply: [r, reply]
-
-# Global chat keeps MysterriaTranslator's existing !<message> shortcut. Staff aliases
-# delegate to ZelChat's /staffchat command, retaining its permission and availability checks.
 
 # ═══════════════════════════════════════════════════════════════
 # Dungeon World Enforcer Settings

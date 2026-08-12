@@ -13,6 +13,7 @@ import net.mysterria.stuff.MysterriaStuff;
 import net.mysterria.stuff.utils.PrettyLogger;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.IllegalPluginAccessException;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -29,8 +30,17 @@ import java.util.regex.Pattern;
  * <p>Messages are identified through {@link ChatMessage#getRawMessage()}, as required by
  * the public API contract. The formatted {@link ChatMessage#getMessage()} is deliberately
  * never parsed or reconstructed.</p>
+ *
+ * <p>Priority is {@link ModulePriority#LOWEST} on purpose. ZelChat runs its internal
+ * modules before any external module, so the filter state is already final here, but
+ * MysterriaTranslator registers its own module at {@link ModulePriority#HIGH} and treats a
+ * leading {@code !} as the global-chat prefix — it strips the prefix, sends the text to the
+ * translation backend, and in its custom range-format path cancels the message and delivers
+ * it to the surrounding players itself. Running first is what guarantees a recognised alias
+ * is cancelled before the translator can publish {@code !m <player> <text>} or {@code !s
+ * <text>} to global or range chat.</p>
  */
-@ChatModuleSettings(pluginOwner = "MysterriaStuff", priority = ModulePriority.HIGH)
+@ChatModuleSettings(pluginOwner = "MysterriaStuff", priority = ModulePriority.LOWEST)
 public final class ZelChatAliasIntegration implements ChatAliasIntegration, ChatModule {
 
     private static final Pattern SAFE_ALIAS = Pattern.compile("[a-z0-9]+");
@@ -120,9 +130,9 @@ public final class ZelChatAliasIntegration implements ChatAliasIntegration, Chat
             return;
         }
 
-        if (!parsed.hasValidPayload()) {
-            cancelAndRun(chatMessage, player -> player.sendMessage(Component.text(
-                    "That chat shortcut requires a message.", NamedTextColor.RED)));
+        Rejection rejection = parsed.rejection();
+        if (rejection != null) {
+            cancelAndRun(chatMessage, player -> player.sendMessage(rejection.describe(parsed)));
             return;
         }
 
@@ -137,7 +147,8 @@ public final class ZelChatAliasIntegration implements ChatAliasIntegration, Chat
         int separator = firstWhitespace(content);
         int aliasEnd = separator < 0 ? content.length() : separator;
 
-        ChatShortcut shortcut = aliases.get(content.substring(1, aliasEnd).toLowerCase(Locale.ROOT));
+        String typedAlias = content.substring(1, aliasEnd).toLowerCase(Locale.ROOT);
+        ChatShortcut shortcut = aliases.get(typedAlias);
         if (shortcut == null) {
             return null;
         }
@@ -147,10 +158,14 @@ public final class ZelChatAliasIntegration implements ChatAliasIntegration, Chat
             payloadStart++;
         }
         String payload = content.substring(payloadStart).strip();
-        boolean validPayload = separator >= 0
-                && !payload.isEmpty()
-                && !CONTROL_CHARACTER.matcher(content).find();
-        return new ParsedShortcut(shortcut, payload, validPayload);
+
+        Rejection rejection = null;
+        if (separator < 0 || payload.isEmpty()) {
+            rejection = Rejection.MISSING_ARGUMENTS;
+        } else if (CONTROL_CHARACTER.matcher(payload).find()) {
+            rejection = Rejection.UNSUPPORTED_CHARACTERS;
+        }
+        return new ParsedShortcut(shortcut, typedAlias, payload, rejection);
     }
 
     private int firstWhitespace(String content) {
@@ -168,13 +183,24 @@ public final class ZelChatAliasIntegration implements ChatAliasIntegration, Chat
 
     private void cancelAndRun(ChatMessage chatMessage, MessageState cancelledState,
                               java.util.function.Consumer<Player> action) {
+        // Cancel first and unconditionally: if the follow-up cannot be scheduled the
+        // shortcut is silently dropped, which is the only acceptable failure mode when the
+        // alternative is leaking private text into whichever channel the player was in.
         chatMessage.setState(cancelledState);
         Player player = chatMessage.getBukkitPlayer();
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
-            if (plugin.isEnabled() && player != null && player.isOnline()) {
-                action.accept(player);
-            }
-        });
+        try {
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                if (plugin.isEnabled() && player.isOnline()) {
+                    action.accept(player);
+                }
+            });
+        } catch (IllegalPluginAccessException schedulingRefused) {
+            // handleChatMessage runs off the main thread, so MysterriaStuff can be disabled
+            // between the state check and this call. Swallow it rather than throwing back
+            // into ZelChat's message pipeline.
+            PrettyLogger.debug("Dropped chat shortcut for " + player.getName()
+                    + "; MysterriaStuff is shutting down");
+        }
     }
 
     private void dispatchProviderCommand(Player player, ParsedShortcut parsed) {
@@ -183,12 +209,17 @@ public final class ZelChatAliasIntegration implements ChatAliasIntegration, Chat
             if (player.performCommand(command + " " + parsed.payload())) {
                 return;
             }
+            // dispatchCommand only reports false for an unknown command, and Bukkit has
+            // already told the player so. Surface it to the console instead, because it
+            // means the configured provider command is missing or was renamed.
+            PrettyLogger.warn("Chat shortcut " + parsed.shortcut().routeId()
+                    + " could not run /" + command + "; is the owning plugin installed?");
         } catch (RuntimeException dispatchFailure) {
             PrettyLogger.error("Failed to dispatch chat shortcut " + parsed.shortcut().routeId()
                     + ": " + dispatchFailure.getMessage());
-        }
-        if (player.isOnline()) {
-            player.sendMessage(Component.text("That chat channel is currently unavailable.", NamedTextColor.RED));
+            if (player.isOnline()) {
+                player.sendMessage(Component.text("That chat channel is currently unavailable.", NamedTextColor.RED));
+            }
         }
     }
 
@@ -215,26 +246,28 @@ public final class ZelChatAliasIntegration implements ChatAliasIntegration, Chat
     }
 
     private enum ChatShortcut {
-        CHURCH("church", "cc", "c", "cc", "church"),
-        ORGANIZATION("organization", "oc", "o", "oc", "org", "order"),
-        LANDS("lands", "lands chat", "l", "land", "lands"),
-        NATIONS("nations", "nations chat", "n", "nation", "nations"),
+        CHURCH("church", "cc", "<message>", "c", "cc", "church"),
+        ORGANIZATION("organization", "oc", "<message>", "o", "oc", "org", "order"),
+        LANDS("lands", "lands chat", "<message>", "l", "land", "lands"),
+        NATIONS("nations", "nations chat", "<message>", "n", "nation", "nations"),
         // The deployed MythicDungeons plugin registers /p as its party-chat command.
         // /party is the separate party-management command.
-        PARTY("party", "p", "p", "party", "dp", "dparty"),
-        STAFF("staff", "staffchat", "s", "sc", "staff"),
+        PARTY("party", "p", "<message>", "p", "party", "dp", "dparty"),
+        STAFF("staff", "staffchat", "<message>", "s", "sc", "staff"),
         // ZelChat's public configuration documents these command names. Delegating to
         // the commands retains ZelChat's own privacy, ignore and reply checks.
-        PRIVATE_MESSAGE("message", "msg", "m", "msg", "dm", "pm", "w", "whisper", "tell"),
-        REPLY("reply", "reply", "r", "reply");
+        PRIVATE_MESSAGE("message", "msg", "<player> <message>", "m", "msg", "dm", "pm", "w", "whisper", "tell"),
+        REPLY("reply", "reply", "<message>", "r", "reply");
 
         private final String routeId;
         private final String providerCommand;
+        private final String argumentHint;
         private final List<String> defaultAliases;
 
-        ChatShortcut(String routeId, String providerCommand, String... defaultAliases) {
+        ChatShortcut(String routeId, String providerCommand, String argumentHint, String... defaultAliases) {
             this.routeId = routeId;
             this.providerCommand = providerCommand;
+            this.argumentHint = argumentHint;
             this.defaultAliases = List.of(defaultAliases);
         }
 
@@ -246,11 +279,42 @@ public final class ZelChatAliasIntegration implements ChatAliasIntegration, Chat
             return providerCommand;
         }
 
+        String argumentHint() {
+            return argumentHint;
+        }
+
         List<String> defaultAliases() {
             return defaultAliases;
         }
     }
 
-    private record ParsedShortcut(ChatShortcut shortcut, String payload, boolean hasValidPayload) {
+    /**
+     * Why a recognised alias was cancelled without being routed. A recognised alias always
+     * fails closed rather than falling through to the player's current channel, so the
+     * message has to explain what to type instead.
+     */
+    private enum Rejection {
+
+        MISSING_ARGUMENTS {
+            @Override
+            Component describe(ParsedShortcut parsed) {
+                return Component.text("Usage: !" + parsed.typedAlias() + " "
+                        + parsed.shortcut().argumentHint(), NamedTextColor.RED);
+            }
+        },
+
+        UNSUPPORTED_CHARACTERS {
+            @Override
+            Component describe(ParsedShortcut parsed) {
+                return Component.text("!" + parsed.typedAlias()
+                        + " could not be sent: the message contains unsupported characters.",
+                        NamedTextColor.RED);
+            }
+        };
+
+        abstract Component describe(ParsedShortcut parsed);
+    }
+
+    private record ParsedShortcut(ChatShortcut shortcut, String typedAlias, String payload, Rejection rejection) {
     }
 }

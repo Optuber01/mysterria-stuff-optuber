@@ -25,67 +25,10 @@ repositories {
         url = "https://nexus.mysterria.net/repository/plugin-public/"
     }
 
-    // ZelChat does not currently publish a resolvable API artifact. Compile its
-    // public API sources from an immutable GitHub commit instead of maintaining
-    // a handwritten copy of the deployed plugin's classes.
-    ivy {
-        name = "zelchatGitHub"
-        url = uri("https://github.com/ZelChat/zelchat-api/archive")
-        patternLayout {
-            artifact "[revision].zip"
-        }
-        metadataSources {
-            artifact()
-        }
-        content {
-            includeModule("it.pino.zelchat", "zelchat-api-source")
-        }
+    maven {
+        name = "pinodevRepo"
+        url = "https://repo.pinodev.it/releases"
     }
-}
-
-sourceSets {
-    zelchatApi {
-        java.srcDir(layout.buildDirectory.dir("generated/sources/zelchatApi"))
-    }
-}
-
-configurations {
-    zelchatApiCompileOnly.extendsFrom compileOnly
-    zelchatApiSource
-}
-
-def zelchatApiCommit = "b32f3d240f1f8eb7216aa53556e01324d17372f6"
-def zelchatApiArchiveSha256 = "27bf33f6439e6f074cac9ce56f49351cf7cecbedd965dc6873a52c45314e063c"
-def zelchatApiArchiveRoot = "zelchat-api-${zelchatApiCommit}/src/main/java/"
-def generatedZelchatApiSources = layout.buildDirectory.dir("generated/sources/zelchatApi")
-def zelchatJarPath = providers.gradleProperty('zelchatJar')
-sourceSets.main.compileClasspath += zelchatJarPath.isPresent()
-        ? files(zelchatJarPath.get())
-        : sourceSets.zelchatApi.output
-
-if (!zelchatJarPath.isPresent()) {
-    tasks.register('syncZelChatApiSources', Sync) {
-        doFirst {
-            File archive = configurations.zelchatApiSource.singleFile
-            String actualSha256 = java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(archive.bytes)
-                    .encodeHex()
-                    .toString()
-            if (actualSha256 != zelchatApiArchiveSha256) {
-                throw new GradleException("Unexpected ZelChat public API archive checksum: ${actualSha256}")
-            }
-        }
-        from({ zipTree(configurations.zelchatApiSource.singleFile) }) {
-            include "${zelchatApiArchiveRoot}**/*.java"
-            eachFile { details ->
-                details.path = details.path.substring(zelchatApiArchiveRoot.length())
-            }
-            includeEmptyDirs = false
-        }
-        into generatedZelchatApiSources
-    }
-    tasks.compileZelchatApiJava.dependsOn(tasks.syncZelChatApiSources)
-    tasks.compileJava.dependsOn(tasks.compileZelchatApiJava)
 }
 
 tasks.build.dependsOn(shadowJar)
@@ -95,7 +38,7 @@ dependencies {
     compileOnly("dev.ua.ikeepcalm:circle-of-imagination-api:1.4.0-SNAPSHOT")
     compileOnly("de.skyslycer.hmcwraps:api:1.7.0")
     compileOnly("io.papermc.paper:paper-api:26.1.2.build.+")
-    zelchatApiSource("it.pino.zelchat:zelchat-api-source:${zelchatApiCommit}@zip")
+    compileOnly("it.pino.zelchat:zelchat-api:2.0.0-pre-27")
 }
 
 tasks {
@@ -133,18 +76,3 @@ processResources {
         expand props
     }
 }
-
-tasks.register('verifyZelChatApiNotBundled') {
-    dependsOn tasks.shadowJar
-    doLast {
-        def archive = tasks.shadowJar.archiveFile.get().asFile
-        def bundled = zipTree(archive).matching {
-            include 'it/pino/zelchat/api/**'
-        }.files
-        if (!bundled.empty) {
-            throw new GradleException("ZelChat API classes must remain compile-only: ${bundled}")
-        }
-    }
-}
-
-tasks.check.dependsOn(tasks.verifyZelChatApiNotBundled)
