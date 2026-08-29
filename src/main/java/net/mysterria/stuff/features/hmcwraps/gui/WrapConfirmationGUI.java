@@ -2,6 +2,8 @@ package net.mysterria.stuff.features.hmcwraps.gui;
 
 import de.skyslycer.hmcwraps.HMCWraps;
 import de.skyslycer.hmcwraps.serialization.wrap.Wrap;
+import dev.ua.ikeepcalm.coi.api.audit.AuditOutcome;
+import dev.ua.ikeepcalm.coi.api.audit.AuditRisk;
 import dev.triumphteam.gui.guis.Gui;
 import dev.triumphteam.gui.guis.GuiItem;
 import net.kyori.adventure.text.Component;
@@ -9,6 +11,7 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.mysterria.stuff.features.hmcwraps.UniversalTokenManager;
+import net.mysterria.stuff.audit.StuffAuditEmitter;
 import net.mysterria.stuff.utils.AdventureUtil;
 import net.mysterria.stuff.utils.PrettyLogger;
 import org.bukkit.Material;
@@ -19,6 +22,9 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 
 import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.UUID;
 
 
 public class WrapConfirmationGUI {
@@ -116,10 +122,18 @@ public class WrapConfirmationGUI {
             return;
         }
 
+        UUID correlationId = StuffAuditEmitter.correlationId();
+
         if (!manager.consumeToken(heldItem, 1)) {
             player.sendMessage(manager.getMessage("no-token-in-hand"));
             return;
         }
+
+        StuffAuditEmitter.emit(manager.getPlugin(), "token.consumed", AuditOutcome.COMMITTED,
+                AuditRisk.NORMAL, correlationId,
+                StuffAuditEmitter.tokenBusinessId("universal"), player.getUniqueId(),
+                player.getUniqueId(), null, "wrap_exchange",
+                StuffAuditEmitter.tokenMetadata("universal", 1, "wrap_exchange"));
 
         ItemStack wrapperItem;
         try {
@@ -130,11 +144,7 @@ public class WrapConfirmationGUI {
 
 
                 ItemStack tokenRefund = manager.createToken(1);
-                if (player.getInventory().firstEmpty() == -1) {
-                    player.getWorld().dropItemNaturally(player.getLocation(), tokenRefund);
-                } else {
-                    player.getInventory().addItem(tokenRefund);
-                }
+                emitTokenRefund(player, tokenRefund, correlationId);
                 player.sendMessage(Component.text("Your token has been refunded.", NamedTextColor.GREEN));
                 return;
             }
@@ -149,26 +159,52 @@ public class WrapConfirmationGUI {
 
 
             ItemStack tokenRefund = manager.createToken(1);
-            if (player.getInventory().firstEmpty() == -1) {
-                player.getWorld().dropItemNaturally(player.getLocation(), tokenRefund);
-            } else {
-                player.getInventory().addItem(tokenRefund);
-            }
+            emitTokenRefund(player, tokenRefund, correlationId);
             player.sendMessage(Component.text("Your token has been refunded.", NamedTextColor.GREEN));
             return;
         }
 
-        if (player.getInventory().firstEmpty() == -1) {
-            player.getWorld().dropItemNaturally(player.getLocation(), wrapperItem);
+        Map<String, Object> delivery = deliverItem(player, wrapperItem);
+        if ("dropped".equals(delivery.get("delivery_mode"))) {
             player.sendMessage(Component.text("Inventory full! Wrapper dropped at your feet.", NamedTextColor.YELLOW));
-        } else {
-            player.getInventory().addItem(wrapperItem);
         }
+
+        Map<String, Object> metadata = new LinkedHashMap<>(StuffAuditEmitter.wrapMetadata(wrap, wrapperItem, true));
+        metadata.put("delivery", "universal_token_exchange");
+        metadata.putAll(delivery);
+        StuffAuditEmitter.emit(manager.getPlugin(), "cosmetic.unlocked", AuditOutcome.COMMITTED,
+                AuditRisk.NORMAL, correlationId,
+                StuffAuditEmitter.wrapBusinessId(wrap, wrap.getWrapName()), player.getUniqueId(),
+                player.getUniqueId(), null, "universal_token_exchange", metadata);
 
         String wrapName = wrap.getName();
         player.sendMessage(manager.getMessage("wrap-exchanged", "wrap", AdventureUtil.convertMiniMessageToLegacy(wrapName)));
 
         PrettyLogger.debug(player.getName() + " exchanged a token for wrap: " + wrapName);
+    }
+
+    private void emitTokenRefund(Player player, ItemStack token, UUID correlationId) {
+        Map<String, Object> delivery = deliverItem(player, token);
+        Map<String, Object> metadata = new LinkedHashMap<>(StuffAuditEmitter.tokenMetadata("universal", 1, "wrap_exchange_refund"));
+        metadata.putAll(delivery);
+        StuffAuditEmitter.emit(manager.getPlugin(), "token.granted", AuditOutcome.COMMITTED,
+                AuditRisk.NORMAL, correlationId,
+                StuffAuditEmitter.tokenBusinessId("universal"), player.getUniqueId(),
+                player.getUniqueId(), null, "wrap_exchange_refund",
+                metadata);
+    }
+
+    private Map<String, Object> deliverItem(Player player, ItemStack item) {
+        Map<Integer, ItemStack> leftovers = player.getInventory().addItem(item);
+        int droppedAmount = 0;
+        for (ItemStack leftover : leftovers.values()) {
+            if (leftover == null || leftover.getAmount() <= 0) continue;
+            droppedAmount += leftover.getAmount();
+            player.getWorld().dropItemNaturally(player.getLocation(), leftover);
+        }
+        int deliveredAmount = Math.max(0, item.getAmount() - droppedAmount);
+        return Map.of("delivery_mode", droppedAmount > 0 ? "dropped" : "inventory",
+                "delivered_amount", deliveredAmount, "dropped_amount", droppedAmount);
     }
 
 

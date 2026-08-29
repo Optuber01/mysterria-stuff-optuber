@@ -6,6 +6,9 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.mysterria.stuff.MysterriaStuff;
+import net.mysterria.stuff.audit.StuffAuditEmitter;
+import dev.ua.ikeepcalm.coi.api.audit.AuditOutcome;
+import dev.ua.ikeepcalm.coi.api.audit.AuditRisk;
 import net.mysterria.stuff.features.joinmsg.JoinMsgTokenManager;
 import net.mysterria.stuff.features.coi.BoosterPatriarchListener;
 import net.mysterria.stuff.features.joinmsg.JoinMsgSessionHandler;
@@ -28,6 +31,9 @@ import org.jetbrains.annotations.NotNull;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.UUID;
 
 
 public class MainCommand implements CommandExecutor {
@@ -471,11 +477,18 @@ public class MainCommand implements CommandExecutor {
 
             ItemStack token = tokenManager.createToken(amount);
 
-            if (target.getInventory().firstEmpty() != -1) {
-                target.getInventory().addItem(token);
-            } else {
-                target.getWorld().dropItemNaturally(target.getLocation(), token);
-            }
+            Map<String, Object> delivery = deliverItem(target, token);
+            Map<String, Object> metadata = new LinkedHashMap<>(
+                    StuffAuditEmitter.tokenMetadata("universal", amount, "admin_give"));
+            metadata.putAll(delivery);
+
+            StuffAuditEmitter.emit(MysterriaStuff.getInstance(), "token.granted",
+                    dev.ua.ikeepcalm.coi.api.audit.AuditOutcome.COMMITTED,
+                    dev.ua.ikeepcalm.coi.api.audit.AuditRisk.NORMAL,
+                    StuffAuditEmitter.correlationId(), StuffAuditEmitter.tokenBusinessId("universal"),
+                    sender instanceof Player actor ? actor.getUniqueId() : null,
+                    target.getUniqueId(), null, "admin_give",
+                    metadata);
 
 
             target.sendMessage(tokenManager.getMessage("token-received", "amount", String.valueOf(amount)));
@@ -544,11 +557,18 @@ public class MainCommand implements CommandExecutor {
 
         ItemStack token = manager.createToken(amount);
 
-        if (target.getInventory().firstEmpty() != -1) {
-            target.getInventory().addItem(token);
-        } else {
-            target.getWorld().dropItemNaturally(target.getLocation(), token);
-        }
+        Map<String, Object> delivery = deliverItem(target, token);
+        Map<String, Object> metadata = new LinkedHashMap<>(
+                StuffAuditEmitter.tokenMetadata("joinmsg", amount, "admin_give"));
+        metadata.putAll(delivery);
+
+        StuffAuditEmitter.emit(MysterriaStuff.getInstance(), "token.granted",
+                dev.ua.ikeepcalm.coi.api.audit.AuditOutcome.COMMITTED,
+                dev.ua.ikeepcalm.coi.api.audit.AuditRisk.NORMAL,
+                StuffAuditEmitter.correlationId(), StuffAuditEmitter.tokenBusinessId("joinmsg"),
+                sender instanceof Player actor ? actor.getUniqueId() : null,
+                target.getUniqueId(), null, "admin_give",
+                metadata);
 
 
         target.sendMessage(manager.getMessage("token-received", "amount", String.valueOf(amount)));
@@ -688,6 +708,9 @@ public class MainCommand implements CommandExecutor {
                     case WRITE_ERROR -> sender.sendMessage(
                             Component.text("Failed to save the message store! Check console.").color(NamedTextColor.RED));
                 }
+                if (result == JoinMsgStore.SetResult.OK) {
+                    emitJoinMsgAdmin(sender, "message_set", target, args[2], type);
+                }
                 return true;
             }
             case "get" -> {
@@ -751,6 +774,10 @@ public class MainCommand implements CommandExecutor {
                         .append(Component.text(label).color(NamedTextColor.AQUA))
                         .append(Component.text("."));
                 sender.sendMessage(result);
+                if (changed) {
+                    emitJoinMsgAdmin(sender, "message_removed", target, args[2],
+                            removeJoin && removeQuit ? "join_and_quit" : removeJoin ? "join" : "quit");
+                }
                 return true;
             }
             case "list" -> {
@@ -853,10 +880,15 @@ public class MainCommand implements CommandExecutor {
             }
 
             String stored = message.replace("%player%", "{player}");
-            if (type.equals("join")) {
-                store.setDefaultJoinMessage(stored);
-            } else {
-                store.setDefaultQuitMessage(stored);
+            boolean saved = type.equals("join")
+                    ? store.setDefaultJoinMessage(stored)
+                    : store.setDefaultQuitMessage(stored);
+
+            if (saved) {
+                StuffAuditEmitter.emit(MysterriaStuff.getInstance(), "joinmsg.default_changed",
+                        AuditOutcome.COMMITTED, AuditRisk.NORMAL, StuffAuditEmitter.correlationId(),
+                        "joinmsg:default:" + type, sender instanceof Player actor ? actor.getUniqueId() : null,
+                        null, null, "admin_set", Map.of("message_type", type));
             }
 
             sender.sendMessage(Component.text("Default " + type + " message updated.").color(NamedTextColor.GREEN));
@@ -890,7 +922,13 @@ public class MainCommand implements CommandExecutor {
             }
 
             String message = String.join(" ", Arrays.copyOfRange(args, 3, args.length)).replace("%player%", "{player}");
-            store.setFirstJoinMessage(message);
+            boolean saved = store.setFirstJoinMessage(message);
+            if (saved) {
+                StuffAuditEmitter.emit(MysterriaStuff.getInstance(), "joinmsg.firstjoin_changed",
+                        AuditOutcome.COMMITTED, AuditRisk.NORMAL, StuffAuditEmitter.correlationId(),
+                        "joinmsg:first_join", sender instanceof Player actor ? actor.getUniqueId() : null,
+                        null, null, "admin_set", Map.of());
+            }
             sender.sendMessage(Component.text("First-join message updated. (Uses MiniMessage tags, e.g. <gold>, not & codes.)")
                     .color(NamedTextColor.GREEN));
             return true;
@@ -903,6 +941,31 @@ public class MainCommand implements CommandExecutor {
 
     private String displayName(OfflinePlayer player) {
         return player.getName() != null ? player.getName() : player.getUniqueId().toString();
+    }
+
+    private void emitJoinMsgAdmin(CommandSender sender, String operation, OfflinePlayer target,
+                                  String targetName, String messageType) {
+        UUID subjectId = target == null ? null : target.getUniqueId();
+        String stableTarget = subjectId == null ? targetName : subjectId.toString();
+        StuffAuditEmitter.emit(MysterriaStuff.getInstance(), "joinmsg." + operation,
+                AuditOutcome.COMMITTED, AuditRisk.NORMAL, StuffAuditEmitter.correlationId(),
+                "joinmsg:" + stableTarget,
+                sender instanceof Player actor ? actor.getUniqueId() : null,
+                subjectId, null, "admin_mutation",
+                Map.of("message_type", messageType, "target_name", targetName));
+    }
+
+    private Map<String, Object> deliverItem(Player target, ItemStack item) {
+        Map<Integer, ItemStack> leftovers = target.getInventory().addItem(item);
+        int droppedAmount = 0;
+        for (ItemStack leftover : leftovers.values()) {
+            if (leftover == null || leftover.getAmount() <= 0) continue;
+            droppedAmount += leftover.getAmount();
+            target.getWorld().dropItemNaturally(target.getLocation(), leftover);
+        }
+        int deliveredAmount = Math.max(0, item.getAmount() - droppedAmount);
+        return Map.of("delivery_mode", droppedAmount > 0 ? "dropped" : "inventory",
+                "delivered_amount", deliveredAmount, "dropped_amount", droppedAmount);
     }
 
     private boolean handleLastSprint(CommandSender sender, String[] args) {

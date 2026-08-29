@@ -489,8 +489,7 @@ public class JoinMsgStore {
             }
         }
 
-        if (changed) save();
-        return changed;
+        return changed && save();
     }
 
     public MessageEntry getEntry(OfflinePlayer target) {
@@ -544,8 +543,7 @@ public class JoinMsgStore {
             pending.remove(sanitizeKey(name));
         }
 
-        if (changed) save();
-        return changed;
+        return changed && save();
     }
 
     public List<MessageEntry> listEntries() {

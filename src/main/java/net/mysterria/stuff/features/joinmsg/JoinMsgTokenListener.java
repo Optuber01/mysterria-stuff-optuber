@@ -1,5 +1,8 @@
 package net.mysterria.stuff.features.joinmsg;
 
+import dev.ua.ikeepcalm.coi.api.audit.AuditOutcome;
+import dev.ua.ikeepcalm.coi.api.audit.AuditRisk;
+import net.mysterria.stuff.audit.StuffAuditEmitter;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -55,6 +58,12 @@ public class JoinMsgTokenListener implements Listener {
             player.sendMessage(manager.getMessage("token-error"));
             return;
         }
+
+        StuffAuditEmitter.emit(manager.getPlugin(), "token.consumed", AuditOutcome.COMMITTED,
+                AuditRisk.NORMAL, StuffAuditEmitter.correlationId(),
+                StuffAuditEmitter.tokenBusinessId("joinmsg"), player.getUniqueId(),
+                player.getUniqueId(), null, "joinmsg_session_started",
+                StuffAuditEmitter.tokenMetadata("joinmsg", 1, "joinmsg_session_started"));
 
 
         sessionHandler.startSession(player);
