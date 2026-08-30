@@ -17,11 +17,12 @@ failure never blocks a token, cosmetic, or message-store operation.
 | `mysterria-stuff.joinmsg.default_changed` | Default message store save succeeds | `joinmsg:default:join` or `joinmsg:default:quit` | Message contents are intentionally not logged. |
 | `mysterria-stuff.joinmsg.firstjoin_changed` | First-join message store save succeeds | `joinmsg:first_join` | Message contents are intentionally not logged. |
 
-Every event gets a fresh operation correlation UUID. Player UUIDs are used as
-actor/subject IDs where available; console actors remain unset. Metadata keys
-are snake_case and bounded by the shared audit contract. This repository does
-not invent item UUIDs: `item_uuid` is emitted only when an authoritative item
-owner exposes one.
+Every independent operation gets a fresh correlation UUID. Related lifecycle
+events, such as a token consumption and its cancellation refund, reuse the same
+correlation UUID. Player UUIDs are used as actor/subject IDs where available;
+console actors remain unset. Metadata keys are snake_case and bounded by the
+shared audit contract. This repository does not invent item UUIDs: `item_uuid`
+is emitted only when an authoritative item owner exposes one.
 
 ## Deliberate exclusions
 

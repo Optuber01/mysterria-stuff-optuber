@@ -2,8 +2,6 @@ package net.mysterria.stuff.features.hmcwraps.gui;
 
 import de.skyslycer.hmcwraps.HMCWraps;
 import de.skyslycer.hmcwraps.serialization.wrap.Wrap;
-import dev.ua.ikeepcalm.coi.api.audit.AuditOutcome;
-import dev.ua.ikeepcalm.coi.api.audit.AuditRisk;
 import dev.triumphteam.gui.guis.Gui;
 import dev.triumphteam.gui.guis.GuiItem;
 import net.kyori.adventure.text.Component;
@@ -129,8 +127,7 @@ public class WrapConfirmationGUI {
             return;
         }
 
-        StuffAuditEmitter.emit(manager.getPlugin(), "token.consumed", AuditOutcome.COMMITTED,
-                AuditRisk.NORMAL, correlationId,
+        StuffAuditEmitter.emit(manager.getPlugin(), "token.consumed", correlationId,
                 StuffAuditEmitter.tokenBusinessId("universal"), player.getUniqueId(),
                 player.getUniqueId(), null, "wrap_exchange",
                 StuffAuditEmitter.tokenMetadata("universal", 1, "wrap_exchange"));
@@ -169,12 +166,13 @@ public class WrapConfirmationGUI {
             player.sendMessage(Component.text("Inventory full! Wrapper dropped at your feet.", NamedTextColor.YELLOW));
         }
 
-        Map<String, Object> metadata = new LinkedHashMap<>(StuffAuditEmitter.wrapMetadata(wrap, wrapperItem, true));
+        Map<String, Object> metadata = new LinkedHashMap<>(StuffAuditEmitter.wrapMetadata(
+                wrap.getUuid(), wrap.getWrapName(), wrapperItem.getType().getKey().toString(),
+                wrapperItem.getAmount(), true));
         metadata.put("delivery", "universal_token_exchange");
         metadata.putAll(delivery);
-        StuffAuditEmitter.emit(manager.getPlugin(), "cosmetic.unlocked", AuditOutcome.COMMITTED,
-                AuditRisk.NORMAL, correlationId,
-                StuffAuditEmitter.wrapBusinessId(wrap, wrap.getWrapName()), player.getUniqueId(),
+        StuffAuditEmitter.emit(manager.getPlugin(), "cosmetic.unlocked", correlationId,
+                StuffAuditEmitter.wrapBusinessId(wrap.getUuid(), wrap.getWrapName()), player.getUniqueId(),
                 player.getUniqueId(), null, "universal_token_exchange", metadata);
 
         String wrapName = wrap.getName();
@@ -187,8 +185,7 @@ public class WrapConfirmationGUI {
         Map<String, Object> delivery = deliverItem(player, token);
         Map<String, Object> metadata = new LinkedHashMap<>(StuffAuditEmitter.tokenMetadata("universal", 1, "wrap_exchange_refund"));
         metadata.putAll(delivery);
-        StuffAuditEmitter.emit(manager.getPlugin(), "token.granted", AuditOutcome.COMMITTED,
-                AuditRisk.NORMAL, correlationId,
+        StuffAuditEmitter.emit(manager.getPlugin(), "token.granted", correlationId,
                 StuffAuditEmitter.tokenBusinessId("universal"), player.getUniqueId(),
                 player.getUniqueId(), null, "wrap_exchange_refund",
                 metadata);

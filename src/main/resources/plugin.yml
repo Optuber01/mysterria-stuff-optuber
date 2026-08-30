@@ -4,8 +4,7 @@ main: net.mysterria.stuff.MysterriaStuff
 api-version: '1.21'
 authors: [ ikeepcalm ]
 description: Enhanced Minecraft plugin with utilities, fixes, and runtime features
-depend: [ CircleOfImagination ]
-softdepend: [ HMCWraps, MysterriaLogging, ZelChat ]
+softdepend: [ HMCWraps, CircleOfImagination, MysterriaLogging, ZelChat ]
 loadbefore:
   - MythicDungeons
 

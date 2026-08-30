@@ -7,8 +7,6 @@ import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.mysterria.stuff.MysterriaStuff;
 import net.mysterria.stuff.audit.StuffAuditEmitter;
-import dev.ua.ikeepcalm.coi.api.audit.AuditOutcome;
-import dev.ua.ikeepcalm.coi.api.audit.AuditRisk;
 import net.mysterria.stuff.features.joinmsg.JoinMsgTokenManager;
 import net.mysterria.stuff.features.coi.BoosterPatriarchListener;
 import net.mysterria.stuff.features.joinmsg.JoinMsgSessionHandler;
@@ -483,8 +481,6 @@ public class MainCommand implements CommandExecutor {
             metadata.putAll(delivery);
 
             StuffAuditEmitter.emit(MysterriaStuff.getInstance(), "token.granted",
-                    dev.ua.ikeepcalm.coi.api.audit.AuditOutcome.COMMITTED,
-                    dev.ua.ikeepcalm.coi.api.audit.AuditRisk.NORMAL,
                     StuffAuditEmitter.correlationId(), StuffAuditEmitter.tokenBusinessId("universal"),
                     sender instanceof Player actor ? actor.getUniqueId() : null,
                     target.getUniqueId(), null, "admin_give",
@@ -563,8 +559,6 @@ public class MainCommand implements CommandExecutor {
         metadata.putAll(delivery);
 
         StuffAuditEmitter.emit(MysterriaStuff.getInstance(), "token.granted",
-                dev.ua.ikeepcalm.coi.api.audit.AuditOutcome.COMMITTED,
-                dev.ua.ikeepcalm.coi.api.audit.AuditRisk.NORMAL,
                 StuffAuditEmitter.correlationId(), StuffAuditEmitter.tokenBusinessId("joinmsg"),
                 sender instanceof Player actor ? actor.getUniqueId() : null,
                 target.getUniqueId(), null, "admin_give",
@@ -764,19 +758,24 @@ public class MainCommand implements CommandExecutor {
                     }
                 }
 
-                boolean changed = target != null
+                JoinMsgStore.RemoveResult removal = target != null
                         ? store.removePlayerMessages(target, removeJoin, removeQuit)
                         : store.removePendingMessages(args[2], removeJoin, removeQuit);
                 String label = target != null ? displayName(target) : args[2];
-                Component result = (changed
-                        ? Component.text("Removed message(s) for ").color(NamedTextColor.GREEN)
-                        : Component.text("No messages were set for ").color(NamedTextColor.GRAY))
-                        .append(Component.text(label).color(NamedTextColor.AQUA))
-                        .append(Component.text("."));
-                sender.sendMessage(result);
-                if (changed) {
+                if (removal.changed() && !removal.saved()) {
+                    sender.sendMessage(Component.text("Failed to save the message store! Check console.")
+                            .color(NamedTextColor.RED));
+                } else {
+                    Component result = (removal.changed()
+                            ? Component.text("Removed message(s) for ").color(NamedTextColor.GREEN)
+                            : Component.text("No messages were set for ").color(NamedTextColor.GRAY))
+                            .append(Component.text(label).color(NamedTextColor.AQUA))
+                            .append(Component.text("."));
+                    sender.sendMessage(result);
+                }
+                if (removal.changed() && removal.saved()) {
                     emitJoinMsgAdmin(sender, "message_removed", target, args[2],
-                            removeJoin && removeQuit ? "join_and_quit" : removeJoin ? "join" : "quit");
+                            removal.messageType());
                 }
                 return true;
             }
@@ -886,12 +885,15 @@ public class MainCommand implements CommandExecutor {
 
             if (saved) {
                 StuffAuditEmitter.emit(MysterriaStuff.getInstance(), "joinmsg.default_changed",
-                        AuditOutcome.COMMITTED, AuditRisk.NORMAL, StuffAuditEmitter.correlationId(),
+                        StuffAuditEmitter.correlationId(),
                         "joinmsg:default:" + type, sender instanceof Player actor ? actor.getUniqueId() : null,
                         null, null, "admin_set", Map.of("message_type", type));
+                sender.sendMessage(Component.text("Default " + type + " message updated.")
+                        .color(NamedTextColor.GREEN));
+            } else {
+                sender.sendMessage(Component.text("Failed to save the message store! Check console.")
+                        .color(NamedTextColor.RED));
             }
-
-            sender.sendMessage(Component.text("Default " + type + " message updated.").color(NamedTextColor.GREEN));
             return true;
         }
 
@@ -925,12 +927,15 @@ public class MainCommand implements CommandExecutor {
             boolean saved = store.setFirstJoinMessage(message);
             if (saved) {
                 StuffAuditEmitter.emit(MysterriaStuff.getInstance(), "joinmsg.firstjoin_changed",
-                        AuditOutcome.COMMITTED, AuditRisk.NORMAL, StuffAuditEmitter.correlationId(),
+                        StuffAuditEmitter.correlationId(),
                         "joinmsg:first_join", sender instanceof Player actor ? actor.getUniqueId() : null,
                         null, null, "admin_set", Map.of());
+                sender.sendMessage(Component.text("First-join message updated. (Uses MiniMessage tags, e.g. <gold>, not & codes.)")
+                        .color(NamedTextColor.GREEN));
+            } else {
+                sender.sendMessage(Component.text("Failed to save the message store! Check console.")
+                        .color(NamedTextColor.RED));
             }
-            sender.sendMessage(Component.text("First-join message updated. (Uses MiniMessage tags, e.g. <gold>, not & codes.)")
-                    .color(NamedTextColor.GREEN));
             return true;
         }
 
@@ -948,7 +953,7 @@ public class MainCommand implements CommandExecutor {
         UUID subjectId = target == null ? null : target.getUniqueId();
         String stableTarget = subjectId == null ? targetName : subjectId.toString();
         StuffAuditEmitter.emit(MysterriaStuff.getInstance(), "joinmsg." + operation,
-                AuditOutcome.COMMITTED, AuditRisk.NORMAL, StuffAuditEmitter.correlationId(),
+                StuffAuditEmitter.correlationId(),
                 "joinmsg:" + stableTarget,
                 sender instanceof Player actor ? actor.getUniqueId() : null,
                 subjectId, null, "admin_mutation",

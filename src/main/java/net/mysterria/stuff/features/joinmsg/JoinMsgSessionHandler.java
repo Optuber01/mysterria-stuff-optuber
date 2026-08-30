@@ -1,8 +1,6 @@
 package net.mysterria.stuff.features.joinmsg;
 
 import io.papermc.paper.event.player.AsyncChatEvent;
-import dev.ua.ikeepcalm.coi.api.audit.AuditOutcome;
-import dev.ua.ikeepcalm.coi.api.audit.AuditRisk;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
@@ -39,14 +37,14 @@ public class JoinMsgSessionHandler implements Listener {
     }
 
 
-    public void startSession(Player player) {
+    public void startSession(Player player, UUID correlationId) {
         UUID playerId = player.getUniqueId();
 
 
         activeSessions.remove(playerId);
 
 
-        PlayerSession session = new PlayerSession(player);
+        PlayerSession session = new PlayerSession(player, correlationId);
         activeSessions.put(playerId, session);
 
 
@@ -249,8 +247,7 @@ public class JoinMsgSessionHandler implements Listener {
         if (result == JoinMsgStore.SetResult.OK) {
             String messageType = session.getJoinMessage() != null && session.getQuitMessage() != null
                     ? "join_and_quit" : session.getJoinMessage() != null ? "join" : "quit";
-            StuffAuditEmitter.emit(plugin, "joinmsg.message_set", AuditOutcome.COMMITTED,
-                    AuditRisk.NORMAL, StuffAuditEmitter.correlationId(),
+            StuffAuditEmitter.emit(plugin, "joinmsg.message_set", session.getCorrelationId(),
                     "joinmsg:" + playerId, playerId, playerId, null, "self_service",
                     Map.of("message_type", messageType, "target_name", player.getName()));
         }
@@ -261,7 +258,8 @@ public class JoinMsgSessionHandler implements Listener {
         UUID playerId = player.getUniqueId();
 
 
-        if (!activeSessions.containsKey(playerId)) {
+        PlayerSession session = activeSessions.get(playerId);
+        if (session == null) {
             player.sendMessage(manager.getMessage("no-active-session"));
             return;
         }
@@ -276,8 +274,7 @@ public class JoinMsgSessionHandler implements Listener {
                 StuffAuditEmitter.tokenMetadata("joinmsg", 1, "joinmsg_session_cancelled"));
         metadata.putAll(delivery);
 
-        StuffAuditEmitter.emit(plugin, "token.granted", AuditOutcome.COMMITTED,
-                AuditRisk.NORMAL, StuffAuditEmitter.correlationId(),
+        StuffAuditEmitter.emit(plugin, "token.granted", session.getCorrelationId(),
                 StuffAuditEmitter.tokenBusinessId("joinmsg"), player.getUniqueId(),
                 player.getUniqueId(), null, "joinmsg_session_cancelled",
                 metadata);
@@ -291,7 +288,8 @@ public class JoinMsgSessionHandler implements Listener {
     public void handleRestart(Player player) {
         UUID playerId = player.getUniqueId();
 
-        if (!activeSessions.containsKey(playerId)) {
+        PlayerSession session = activeSessions.get(playerId);
+        if (session == null) {
             player.sendMessage(manager.getMessage("no-active-session"));
             return;
         }
@@ -301,7 +299,7 @@ public class JoinMsgSessionHandler implements Listener {
         player.sendMessage(manager.getMessage("session-restarted"));
 
 
-        startSession(player);
+        startSession(player, session.getCorrelationId());
     }
 
 
@@ -338,17 +336,23 @@ public class JoinMsgSessionHandler implements Listener {
 
     private static class PlayerSession {
         private final Player player;
+        private final UUID correlationId;
         private SessionState state;
         private String joinMessage;
         private String quitMessage;
 
-        public PlayerSession(Player player) {
+        public PlayerSession(Player player, UUID correlationId) {
             this.player = player;
+            this.correlationId = correlationId;
             this.state = SessionState.AWAITING_JOIN_MESSAGE;
         }
 
         public Player getPlayer() {
             return player;
+        }
+
+        public UUID getCorrelationId() {
+            return correlationId;
         }
 
         public SessionState getState() {

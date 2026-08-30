@@ -44,6 +44,20 @@ public class JoinMsgStore {
         WRITE_ERROR
     }
 
+    public record RemoveResult(boolean changed, boolean saved,
+                               boolean removedJoin, boolean removedQuit) {
+        public static RemoveResult unchanged() {
+            return new RemoveResult(false, true, false, false);
+        }
+
+        public String messageType() {
+            if (removedJoin && removedQuit) return "join_and_quit";
+            if (removedJoin) return "join";
+            if (removedQuit) return "quit";
+            return "unknown";
+        }
+    }
+
     public static class MessageEntry {
         public final UUID uuid;
         public String name;
@@ -456,40 +470,59 @@ public class JoinMsgStore {
 
         String name = target.getName() != null ? target.getName() : target.getUniqueId().toString();
         UUID uuid = target.getUniqueId();
+        String pendingKey = sanitizeKey(name);
+        MessageEntry previousPlayer = copyEntry(byUuid.get(uuid));
+        MessageEntry previousPending = copyEntry(pending.get(pendingKey));
 
-        pending.remove(sanitizeKey(name));
+        pending.remove(pendingKey);
 
         MessageEntry entry = byUuid.computeIfAbsent(uuid, id -> new MessageEntry(id, name, null, null));
         entry.name = name;
         if (joinMessage != null) entry.join = sanitize(joinMessage).replace("%player%", "{player}");
         if (quitMessage != null) entry.quit = sanitize(quitMessage).replace("%player%", "{player}");
 
-        return save() ? SetResult.OK : SetResult.WRITE_ERROR;
+        if (save()) return SetResult.OK;
+
+        restoreEntry(byUuid, uuid, previousPlayer);
+        restoreEntry(pending, pendingKey, previousPending);
+        return SetResult.WRITE_ERROR;
     }
 
-    public boolean removePlayerMessages(OfflinePlayer target, boolean removeJoin, boolean removeQuit) {
-        boolean changed = false;
-
-        MessageEntry entry = byUuid.get(target.getUniqueId());
-        if (entry != null) {
-            if (removeJoin) { entry.join = null; changed = true; }
-            if (removeQuit) { entry.quit = null; changed = true; }
-            if (entry.join == null && entry.quit == null) {
-                byUuid.remove(target.getUniqueId());
-            }
-        }
-
+    public RemoveResult removePlayerMessages(OfflinePlayer target, boolean removeJoin, boolean removeQuit) {
+        UUID uuid = target.getUniqueId();
         String name = target.getName();
-        MessageEntry pend = name != null ? pending.get(sanitizeKey(name)) : null;
-        if (pend != null) {
-            if (removeJoin) { pend.join = null; changed = true; }
-            if (removeQuit) { pend.quit = null; changed = true; }
-            if (pend.join == null && pend.quit == null) {
-                pending.remove(sanitizeKey(name));
+        String pendingKey = name == null ? null : sanitizeKey(name);
+        MessageEntry previousPlayer = copyEntry(byUuid.get(uuid));
+        MessageEntry previousPending = pendingKey == null ? null : copyEntry(pending.get(pendingKey));
+        boolean removedJoin = false;
+        boolean removedQuit = false;
+
+        MessageEntry entry = byUuid.get(uuid);
+        if (entry != null) {
+            boolean entryChanged = false;
+            if (removeJoin && entry.join != null) { entry.join = null; removedJoin = true; entryChanged = true; }
+            if (removeQuit && entry.quit != null) { entry.quit = null; removedQuit = true; entryChanged = true; }
+            if (entryChanged && entry.join == null && entry.quit == null) {
+                byUuid.remove(uuid);
             }
         }
 
-        return changed && save();
+        MessageEntry pend = pendingKey == null ? null : pending.get(pendingKey);
+        if (pend != null) {
+            boolean pendingChanged = false;
+            if (removeJoin && pend.join != null) { pend.join = null; removedJoin = true; pendingChanged = true; }
+            if (removeQuit && pend.quit != null) { pend.quit = null; removedQuit = true; pendingChanged = true; }
+            if (pendingChanged && pend.join == null && pend.quit == null) {
+                pending.remove(pendingKey);
+            }
+        }
+
+        if (!removedJoin && !removedQuit) return RemoveResult.unchanged();
+        if (save()) return new RemoveResult(true, true, removedJoin, removedQuit);
+
+        restoreEntry(byUuid, uuid, previousPlayer);
+        if (pendingKey != null) restoreEntry(pending, pendingKey, previousPending);
+        return new RemoveResult(true, false, removedJoin, removedQuit);
     }
 
     public MessageEntry getEntry(OfflinePlayer target) {
@@ -524,26 +557,38 @@ public class JoinMsgStore {
             return SetResult.MISSING_PLACEHOLDER_QUIT;
         }
 
-        MessageEntry entry = pending.computeIfAbsent(sanitizeKey(name), k -> new MessageEntry(null, name, null, null));
+        String key = sanitizeKey(name);
+        MessageEntry previous = copyEntry(pending.get(key));
+        MessageEntry entry = pending.computeIfAbsent(key, k -> new MessageEntry(null, name, null, null));
         entry.name = name;
         if (joinMessage != null) entry.join = sanitize(joinMessage).replace("%player%", "{player}");
         if (quitMessage != null) entry.quit = sanitize(quitMessage).replace("%player%", "{player}");
 
-        return save() ? SetResult.OK : SetResult.WRITE_ERROR;
+        if (save()) return SetResult.OK;
+
+        restoreEntry(pending, key, previous);
+        return SetResult.WRITE_ERROR;
     }
 
-    public boolean removePendingMessages(String name, boolean removeJoin, boolean removeQuit) {
-        MessageEntry entry = pending.get(sanitizeKey(name));
-        if (entry == null) return false;
+    public RemoveResult removePendingMessages(String name, boolean removeJoin, boolean removeQuit) {
+        String key = sanitizeKey(name);
+        MessageEntry previous = copyEntry(pending.get(key));
+        MessageEntry entry = pending.get(key);
+        if (entry == null) return RemoveResult.unchanged();
 
-        boolean changed = false;
-        if (removeJoin && entry.join != null) { entry.join = null; changed = true; }
-        if (removeQuit && entry.quit != null) { entry.quit = null; changed = true; }
-        if (entry.join == null && entry.quit == null) {
-            pending.remove(sanitizeKey(name));
+        boolean removedJoin = removeJoin && entry.join != null;
+        boolean removedQuit = removeQuit && entry.quit != null;
+        if (removedJoin) entry.join = null;
+        if (removedQuit) entry.quit = null;
+        if ((removedJoin || removedQuit) && entry.join == null && entry.quit == null) {
+            pending.remove(key);
         }
 
-        return changed && save();
+        if (!removedJoin && !removedQuit) return RemoveResult.unchanged();
+        if (save()) return new RemoveResult(true, true, removedJoin, removedQuit);
+
+        restoreEntry(pending, key, previous);
+        return new RemoveResult(true, false, removedJoin, removedQuit);
     }
 
     public List<MessageEntry> listEntries() {
@@ -561,18 +606,39 @@ public class JoinMsgStore {
     }
 
     public boolean setDefaultJoinMessage(String message) {
+        String previous = this.defaultJoinMessage;
         this.defaultJoinMessage = message;
-        return save();
+        if (save()) return true;
+        this.defaultJoinMessage = previous;
+        return false;
     }
 
     public boolean setDefaultQuitMessage(String message) {
+        String previous = this.defaultQuitMessage;
         this.defaultQuitMessage = message;
-        return save();
+        if (save()) return true;
+        this.defaultQuitMessage = previous;
+        return false;
     }
 
     public boolean setFirstJoinMessage(String message) {
+        String previous = this.firstJoinMessage;
         this.firstJoinMessage = message;
-        return save();
+        if (save()) return true;
+        this.firstJoinMessage = previous;
+        return false;
+    }
+
+    private static MessageEntry copyEntry(MessageEntry entry) {
+        return entry == null ? null : new MessageEntry(entry.uuid, entry.name, entry.join, entry.quit);
+    }
+
+    private static <K> void restoreEntry(Map<K, MessageEntry> entries, K key, MessageEntry previous) {
+        if (previous == null) {
+            entries.remove(key);
+        } else {
+            entries.put(key, previous);
+        }
     }
 
     /**

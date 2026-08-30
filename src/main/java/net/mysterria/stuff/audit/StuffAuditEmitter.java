@@ -1,13 +1,11 @@
 package net.mysterria.stuff.audit;
 
-import de.skyslycer.hmcwraps.serialization.wrap.Wrap;
 import dev.ua.ikeepcalm.coi.api.audit.AuditEmission;
 import dev.ua.ikeepcalm.coi.api.audit.AuditOutcome;
 import dev.ua.ikeepcalm.coi.api.audit.AuditPrivacy;
 import dev.ua.ikeepcalm.coi.api.audit.AuditRisk;
 import dev.ua.ikeepcalm.coi.api.audit.MysterriaAudit;
 import org.bukkit.Bukkit;
-import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -29,12 +27,12 @@ public final class StuffAuditEmitter {
      * Auditing is optional. This method only enqueues an immutable emission on
      * the provider's side and never gates gameplay or the local store.
      */
-    public static void emit(JavaPlugin plugin, String operation, AuditOutcome outcome,
-                            AuditRisk risk, UUID correlationId, String businessId,
+    public static void emit(JavaPlugin plugin, String operation,
+                            UUID correlationId, String businessId,
                             UUID actorId, UUID subjectId, UUID targetId, String reason,
                             Map<String, ?> values) {
-        if (operation == null || operation.isBlank() || outcome == null || risk == null
-                || correlationId == null || businessId == null || businessId.isBlank()) {
+        if (operation == null || operation.isBlank() || correlationId == null
+                || businessId == null || businessId.isBlank()) {
             return;
         }
 
@@ -46,8 +44,8 @@ public final class StuffAuditEmitter {
 
             audit.emit(new AuditEmission(
                     NAMESPACE + operation,
-                    outcome,
-                    risk,
+                    AuditOutcome.COMMITTED,
+                    AuditRisk.NORMAL,
                     AuditPrivacy.STAFF_RESTRICTED,
                     correlationId,
                     businessId,
@@ -56,10 +54,8 @@ public final class StuffAuditEmitter {
                     targetId,
                     reason,
                     boundedMetadata(values)));
-        } catch (RuntimeException | LinkageError failure) {
-            if (plugin != null) {
-                plugin.getLogger().log(Level.FINE, "Mysterria audit emission was unavailable", failure);
-            }
+        } catch (Throwable failure) {
+            logUnavailable(plugin, failure);
         }
     }
 
@@ -71,11 +67,9 @@ public final class StuffAuditEmitter {
         return "token:" + safe(tokenType);
     }
 
-    public static String wrapBusinessId(Wrap wrap, String fallback) {
-        if (wrap == null) return "wrap:" + safe(fallback);
-        String id = wrap.getUuid();
+    public static String wrapBusinessId(String wrapId, String fallback) {
+        String id = wrapId;
         if (id == null || id.isBlank()) id = fallback;
-        if (id == null || id.isBlank()) id = wrap.getWrapName();
         return "wrap:" + safe(id);
     }
 
@@ -87,16 +81,27 @@ public final class StuffAuditEmitter {
         return values;
     }
 
-    public static Map<String, Object> wrapMetadata(Wrap wrap, ItemStack item, boolean physical) {
+    public static Map<String, Object> wrapMetadata(String wrapId, String wrapName,
+                                                    String itemType, int itemAmount,
+                                                    boolean physical) {
         Map<String, Object> values = new LinkedHashMap<>();
-        values.put("wrap_id", safe(wrap == null ? null : wrap.getUuid()));
-        values.put("wrap_name", safe(wrap == null ? null : wrap.getWrapName()));
+        values.put("wrap_id", safe(wrapId));
+        values.put("wrap_name", safe(wrapName));
         values.put("physical", physical);
-        if (item != null) {
-            values.put("item_type", item.getType().getKey().toString());
-            values.put("item_amount", item.getAmount());
+        if (itemType != null) {
+            values.put("item_type", safe(itemType));
+            values.put("item_amount", itemAmount);
         }
         return values;
+    }
+
+    private static void logUnavailable(JavaPlugin plugin, Throwable failure) {
+        if (plugin == null) return;
+        try {
+            plugin.getLogger().log(Level.FINE, "Mysterria audit emission was unavailable", failure);
+        } catch (Throwable ignored) {
+            // Audit failures, including diagnostics, must never gate gameplay.
+        }
     }
 
     private static Map<String, Object> boundedMetadata(Map<String, ?> values) {
