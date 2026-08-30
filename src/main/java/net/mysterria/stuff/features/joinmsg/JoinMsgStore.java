@@ -152,31 +152,31 @@ public class JoinMsgStore {
     }
 
     public boolean save() {
-        YamlConfiguration yaml = new YamlConfiguration();
-
-        if (defaultJoinMessage != null) yaml.set("default.join", defaultJoinMessage);
-        if (defaultQuitMessage != null) yaml.set("default.quit", defaultQuitMessage);
-        if (firstJoinMessage != null) yaml.set("first-join", firstJoinMessage);
-
-        for (MessageEntry entry : byUuid.values()) {
-            String base = "players." + entry.uuid;
-            yaml.set(base + ".name", entry.name);
-            if (entry.join != null) yaml.set(base + ".join", entry.join);
-            if (entry.quit != null) yaml.set(base + ".quit", entry.quit);
-        }
-
-        List<Map<String, Object>> pendingList = new ArrayList<>();
-        for (MessageEntry entry : pending.values()) {
-            Map<String, Object> map = new LinkedHashMap<>();
-            map.put("name", entry.name);
-            if (entry.join != null) map.put("join", entry.join);
-            if (entry.quit != null) map.put("quit", entry.quit);
-            pendingList.add(map);
-        }
-        if (!pendingList.isEmpty()) yaml.set("pending", pendingList);
-
-        File file = getStoreFile();
         try {
+            YamlConfiguration yaml = new YamlConfiguration();
+
+            if (defaultJoinMessage != null) yaml.set("default.join", defaultJoinMessage);
+            if (defaultQuitMessage != null) yaml.set("default.quit", defaultQuitMessage);
+            if (firstJoinMessage != null) yaml.set("first-join", firstJoinMessage);
+
+            for (MessageEntry entry : byUuid.values()) {
+                String base = "players." + entry.uuid;
+                yaml.set(base + ".name", entry.name);
+                if (entry.join != null) yaml.set(base + ".join", entry.join);
+                if (entry.quit != null) yaml.set(base + ".quit", entry.quit);
+            }
+
+            List<Map<String, Object>> pendingList = new ArrayList<>();
+            for (MessageEntry entry : pending.values()) {
+                Map<String, Object> map = new LinkedHashMap<>();
+                map.put("name", entry.name);
+                if (entry.join != null) map.put("join", entry.join);
+                if (entry.quit != null) map.put("quit", entry.quit);
+                pendingList.add(map);
+            }
+            if (!pendingList.isEmpty()) yaml.set("pending", pendingList);
+
+            File file = getStoreFile();
             file.getParentFile().mkdirs();
 
             // Write to a temp file and swap it in, keeping a .bak of whatever was last on disk,
@@ -196,8 +196,12 @@ public class JoinMsgStore {
             }
 
             return true;
-        } catch (IOException e) {
-            PrettyLogger.warn("Failed to save join/quit message store: " + e.getMessage());
+        } catch (IOException | RuntimeException e) {
+            try {
+                PrettyLogger.warn("Failed to save join/quit message store: " + e.getMessage());
+            } catch (RuntimeException ignored) {
+                // Callers still need a false result so they can restore their snapshots.
+            }
             return false;
         }
     }

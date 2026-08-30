@@ -133,6 +133,7 @@ public class WrapConfirmationGUI {
                 StuffAuditEmitter.tokenMetadata("universal", 1, "wrap_exchange"));
 
         ItemStack wrapperItem;
+        String loaderWrapId;
         try {
             if (wrap.getPhysical() == null) {
                 player.sendMessage(Component.text("Error: This wrap has no physical item configured.", NamedTextColor.RED));
@@ -148,7 +149,7 @@ public class WrapConfirmationGUI {
             wrapperItem = wrap.getPhysical().toItem(hmcWraps, player);
 
 
-            addWrapperPDC(wrapperItem, wrap, hmcWraps);
+            loaderWrapId = addWrapperPDC(wrapperItem, wrap, hmcWraps);
         } catch (Exception e) {
             player.sendMessage(Component.text("Error: Failed to create wrap item.", NamedTextColor.RED));
             player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
@@ -162,17 +163,23 @@ public class WrapConfirmationGUI {
         }
 
         Map<String, Object> delivery = deliverItem(player, wrapperItem);
-        if ("dropped".equals(delivery.get("delivery_mode"))) {
+        String deliveryMode = String.valueOf(delivery.get("delivery_mode"));
+        if ("dropped".equals(deliveryMode)) {
             player.sendMessage(Component.text("Inventory full! Wrapper dropped at your feet.", NamedTextColor.YELLOW));
+        } else if ("partial".equals(deliveryMode)) {
+            player.sendMessage(Component.text("Inventory had limited space! "
+                    + delivery.get("delivered_amount") + " wrapper item(s) were added and "
+                    + delivery.get("dropped_amount") + " dropped at your feet.", NamedTextColor.YELLOW));
         }
 
+        String effectiveWrapId = resolveWrapId(wrap, loaderWrapId);
         Map<String, Object> metadata = new LinkedHashMap<>(StuffAuditEmitter.wrapMetadata(
-                wrap.getUuid(), wrap.getWrapName(), wrapperItem.getType().getKey().toString(),
+                effectiveWrapId, wrap.getWrapName(), wrapperItem.getType().getKey().toString(),
                 wrapperItem.getAmount(), true));
         metadata.put("delivery", "universal_token_exchange");
         metadata.putAll(delivery);
         StuffAuditEmitter.emit(manager.getPlugin(), "cosmetic.unlocked", correlationId,
-                StuffAuditEmitter.wrapBusinessId(wrap.getUuid(), wrap.getWrapName()), player.getUniqueId(),
+                StuffAuditEmitter.wrapBusinessId(effectiveWrapId, wrap.getWrapName()), player.getUniqueId(),
                 player.getUniqueId(), null, "universal_token_exchange", metadata);
 
         String wrapName = wrap.getName();
@@ -200,16 +207,24 @@ public class WrapConfirmationGUI {
             player.getWorld().dropItemNaturally(player.getLocation(), leftover);
         }
         int deliveredAmount = Math.max(0, item.getAmount() - droppedAmount);
-        return Map.of("delivery_mode", droppedAmount > 0 ? "dropped" : "inventory",
+        String deliveryMode = droppedAmount == 0 ? "inventory"
+                : deliveredAmount == 0 ? "dropped" : "partial";
+        return Map.of("delivery_mode", deliveryMode,
                 "delivered_amount", deliveredAmount, "dropped_amount", droppedAmount);
     }
 
+    private String resolveWrapId(Wrap wrap, String loaderWrapId) {
+        String wrapId = wrap.getUuid();
+        if (wrapId == null || wrapId.isBlank()) wrapId = loaderWrapId;
+        if (wrapId == null || wrapId.isBlank()) wrapId = wrap.getWrapName();
+        return wrapId;
+    }
 
-    private void addWrapperPDC(ItemStack item, Wrap wrap, HMCWraps hmcWraps) {
+    private String addWrapperPDC(ItemStack item, Wrap wrap, HMCWraps hmcWraps) {
         ItemMeta meta = item.getItemMeta();
         if (meta == null) {
             PrettyLogger.warn("Cannot add wrapper PDC - item meta is null for wrap: " + wrap.getWrapName());
-            return;
+            return null;
         }
 
         try {
@@ -223,7 +238,7 @@ public class WrapConfirmationGUI {
 
             if (wrapIdentifier == null) {
                 PrettyLogger.warn("Could not find wrap identifier for wrap: " + wrap.getWrapName());
-                return;
+                return null;
             }
 
             NamespacedKey key = new NamespacedKey("hmcwraps", "wrapper");
@@ -232,8 +247,10 @@ public class WrapConfirmationGUI {
             item.setItemMeta(meta);
 
             PrettyLogger.debug("Added wrapper PDC to item - Key: " + wrapIdentifier + " for wrap: " + wrap.getWrapName());
+            return wrapIdentifier;
         } catch (Exception e) {
             PrettyLogger.warn("Failed to add wrapper PDC for wrap '" + wrap.getWrapName() + "': " + e.getMessage());
+            return null;
         }
     }
 }
