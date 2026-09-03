@@ -1,12 +1,9 @@
 package net.mysterria.stuff.audit;
 
-import dev.ua.ikeepcalm.coi.api.audit.AuditEmission;
-import dev.ua.ikeepcalm.coi.api.audit.AuditOutcome;
-import dev.ua.ikeepcalm.coi.api.audit.AuditPrivacy;
-import dev.ua.ikeepcalm.coi.api.audit.AuditRisk;
-import dev.ua.ikeepcalm.coi.api.audit.MysterriaAudit;
-import org.bukkit.Bukkit;
-import org.bukkit.plugin.RegisteredServiceProvider;
+import dev.ua.ikeepcalm.mysterria.audit.client.api.AuditOutcome;
+import dev.ua.ikeepcalm.mysterria.audit.client.api.AuditPrivacy;
+import dev.ua.ikeepcalm.mysterria.audit.client.api.AuditProducer;
+import dev.ua.ikeepcalm.mysterria.audit.client.api.AuditRisk;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.LinkedHashMap;
@@ -19,8 +16,20 @@ public final class StuffAuditEmitter {
     private static final String NAMESPACE = "mysterria-stuff.";
     private static final int MAX_METADATA_ENTRIES = 32;
     private static final int MAX_TEXT = 256;
+    private static AuditProducer producer;
 
     private StuffAuditEmitter() {
+    }
+
+    public static void initialize(JavaPlugin plugin) {
+        producer = AuditProducer.create(plugin.getDataFolder().toPath().toAbsolutePath().getParent(),
+                "mysterria-stuff", plugin.getPluginMeta().getVersion());
+    }
+
+    public static void close() {
+        AuditProducer current = producer;
+        producer = null;
+        if (current != null) current.close();
     }
 
     /**
@@ -37,23 +46,12 @@ public final class StuffAuditEmitter {
         }
 
         try {
-            RegisteredServiceProvider<MysterriaAudit> registration =
-                    Bukkit.getServicesManager().getRegistration(MysterriaAudit.class);
-            MysterriaAudit audit = registration == null ? null : registration.getProvider();
-            if (audit == null) return;
+            AuditProducer current = producer;
+            if (current == null) return;
 
-            audit.emit(new AuditEmission(
-                    NAMESPACE + operation,
-                    AuditOutcome.COMMITTED,
-                    AuditRisk.NORMAL,
-                    AuditPrivacy.STAFF_RESTRICTED,
-                    correlationId,
-                    businessId,
-                    actorId,
-                    subjectId,
-                    targetId,
-                    reason,
-                    boundedMetadata(values)));
+            current.emit(NAMESPACE + operation, AuditOutcome.COMMITTED, AuditRisk.NORMAL,
+                    AuditPrivacy.STAFF_RESTRICTED, correlationId, businessId, actorId,
+                    subjectId, targetId, reason, boundedMetadata(values));
         } catch (Throwable failure) {
             logUnavailable(plugin, failure);
         }
