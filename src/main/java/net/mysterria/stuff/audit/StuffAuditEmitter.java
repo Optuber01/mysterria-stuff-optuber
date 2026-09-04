@@ -22,7 +22,8 @@ public final class StuffAuditEmitter {
     }
 
     public static void initialize(JavaPlugin plugin) {
-        producer = AuditProducer.create(plugin.getDataFolder().toPath().toAbsolutePath().getParent(),
+        producer = AuditProducer.create(plugin.getDataFolder().toPath().toAbsolutePath().getParent()
+                        .resolve("mysterria-audit-spool"),
                 "mysterria-stuff", plugin.getPluginMeta().getVersion());
     }
 
