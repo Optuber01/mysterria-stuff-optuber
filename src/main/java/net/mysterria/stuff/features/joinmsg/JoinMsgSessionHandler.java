@@ -297,18 +297,23 @@ public class JoinMsgSessionHandler implements Listener {
         ItemStack token = manager.createToken(1);
         // Refund tokens stay unstamped so they keep stacking with existing tokens; the lot uuid is row-only.
         Map<String, Object> lot = ItemIdentity.lotMetadata(ItemIdentity.ORIGIN_SHOP, null, 1);
-        ItemDelivery.Result delivery = ItemDelivery.deliver(player, token);
         Map<String, Object> metadata = new LinkedHashMap<>(
                 StuffAuditEmitter.tokenMetadata("joinmsg", 1, "joinmsg_session_cancelled"));
-        metadata.putAll(delivery.toMetadata());
         metadata.putAll(lot);
         if (session.getConsumedTokenUuid() != null) metadata.put("parent_item_uuid", session.getConsumedTokenUuid());
         metadata.putAll(StuffAuditEmitter.location(player));
+        String businessId = StuffAuditEmitter.tokenBusinessId("joinmsg");
+        ItemDelivery.Result delivery;
+        try {
+            delivery = ItemDelivery.deliver(player, token);
+        } catch (RuntimeException e) {
+            StuffAuditEmitter.emitDeliveryException("token.granted", session.getCorrelationId(), businessId,
+                    player.getUniqueId(), player.getUniqueId(), "joinmsg_session_cancelled", metadata, e);
+            throw e;
+        }
 
-        StuffAuditEmitter.emit("token.granted", session.getCorrelationId(),
-                StuffAuditEmitter.tokenBusinessId("joinmsg"), player.getUniqueId(),
-                player.getUniqueId(), null, "joinmsg_session_cancelled",
-                metadata);
+        StuffAuditEmitter.emitDelivery("token.granted", session.getCorrelationId(), businessId,
+                player.getUniqueId(), player.getUniqueId(), "joinmsg_session_cancelled", delivery, metadata);
 
 
         player.sendMessage(manager.getMessage("session-cancelled"));

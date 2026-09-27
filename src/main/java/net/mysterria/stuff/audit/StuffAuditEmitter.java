@@ -4,6 +4,7 @@ import dev.ua.ikeepcalm.mysterria.audit.client.api.AuditOutcome;
 import dev.ua.ikeepcalm.mysterria.audit.client.api.AuditPrivacy;
 import dev.ua.ikeepcalm.mysterria.audit.client.api.AuditProducer;
 import dev.ua.ikeepcalm.mysterria.audit.client.api.AuditRisk;
+import net.mysterria.stuff.utils.ItemDelivery;
 import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
@@ -76,6 +77,35 @@ public final class StuffAuditEmitter {
                             Map<String, ?> values) {
         emit(AuditOutcome.COMMITTED, operation, correlationId, businessId, actorId, subjectId,
                 targetId, reason, values);
+    }
+
+    /**
+     * Records an item delivery: COMMITTED when every item reached the inventory or a valid ground
+     * drop, FAILED (failure=items_undelivered) when some or all of it never entered the world.
+     * Delivery metadata and item identities from the result are added to {@code values}.
+     */
+    public static void emitDelivery(String operation, UUID correlationId, String businessId,
+                                    UUID actorId, UUID subjectId, String reason,
+                                    ItemDelivery.Result delivery, Map<String, Object> values) {
+        Map<String, Object> metadata = new LinkedHashMap<>(values);
+        metadata.putAll(delivery.toMetadata());
+        delivery.identityMetadata().forEach(metadata::putIfAbsent);
+        if (delivery.complete()) {
+            emit(operation, correlationId, businessId, actorId, subjectId, null, reason, metadata);
+            return;
+        }
+        metadata.put("failure", "items_undelivered");
+        emitFailed(operation, correlationId, businessId, actorId, subjectId, null, reason, metadata);
+    }
+
+    /** Records a delivery that threw before any outcome could be determined. */
+    public static void emitDeliveryException(String operation, UUID correlationId, String businessId,
+                                             UUID actorId, UUID subjectId, String reason,
+                                             Map<String, Object> values, Throwable failure) {
+        Map<String, Object> metadata = new LinkedHashMap<>(values);
+        metadata.put("failure", "delivery_exception");
+        metadata.put("error_class", failure.getClass().getName());
+        emitFailed(operation, correlationId, businessId, actorId, subjectId, null, reason, metadata);
     }
 
     /** Records an operation that was attempted but did not take effect. */

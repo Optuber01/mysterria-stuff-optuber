@@ -26,6 +26,10 @@ public final class ItemIdentity {
 
     public static final String ORIGIN_STAFF_GRANT = "STAFF_GRANT";
     public static final String ORIGIN_SHOP = "SHOP";
+    /** item_uuid_scope for a per-instance id that is also written to the item PDC. */
+    public static final String SCOPE_INSTANCE = "instance";
+    /** item_uuid_scope for a row-only id naming one granted stack of unstamped items. */
+    public static final String SCOPE_LOT = "lot";
 
     private static final String NAMESPACE = "circleofimagination";
     private static final NamespacedKey ITEM_UUID = new NamespacedKey(NAMESPACE, "item_uuid");
@@ -74,7 +78,7 @@ public final class ItemIdentity {
     public static Map<String, Object> lotMetadata(String origin, String mintedBy, int amount) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("item_uuid", UUID.randomUUID().toString());
-        metadata.put("item_uuid_scope", "lot");
+        metadata.put("item_uuid_scope", SCOPE_LOT);
         metadata.put("item_mint_qty", amount);
         metadata.put("item_origin", origin);
         if (mintedBy != null) metadata.put("item_minted_by", mintedBy);

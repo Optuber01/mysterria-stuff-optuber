@@ -22,12 +22,18 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
 
 public class WrapConfirmationGUI {
+
+    private static final long PREVIEW_FAILURE_WINDOW_MS = 60_000L;
+    private static final int PREVIEW_FAILURE_PRUNE_SIZE = 256;
+    /** player|wrap -> last preview FAILED row time; GUI callbacks run on the main thread. */
+    private static final Map<String, Long> PREVIEW_FAILURES = new HashMap<>();
 
     private final UniversalTokenManager manager;
     private final MiniMessage miniMessage;
@@ -53,7 +59,7 @@ public class WrapConfirmationGUI {
                 player.sendMessage(Component.text("Error: This wrap has no physical item configured.", NamedTextColor.RED));
                 player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
                 PrettyLogger.warn("Wrap '" + wrap.getWrapName() + "' has null physical item");
-                emitUnlockFailed(player, wrap, StuffAuditEmitter.correlationId(), "wrap_physical_missing", "preview");
+                emitPreviewFailed(player, wrap, "wrap_physical_missing");
                 return;
             }
             wrapItem = wrap.getPhysical().toItem(hmcWraps, player);
@@ -61,7 +67,7 @@ public class WrapConfirmationGUI {
             player.sendMessage(Component.text("Error: Failed to load wrap item.", NamedTextColor.RED));
             player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
             PrettyLogger.warn("Failed to get physical item for wrap '" + wrap.getWrapName() + "': " + e.getMessage());
-            emitUnlockFailed(player, wrap, StuffAuditEmitter.correlationId(), "wrapper_creation_failed", "preview");
+            emitPreviewFailed(player, wrap, "wrapper_creation_failed");
             return;
         }
 
@@ -134,7 +140,10 @@ public class WrapConfirmationGUI {
 
         Map<String, Object> consumed = new LinkedHashMap<>(
                 StuffAuditEmitter.tokenMetadata("universal", 1, "wrap_exchange"));
-        if (tokenUuid != null) consumed.put("item_uuid", tokenUuid);
+        if (tokenUuid != null) {
+            consumed.put("item_uuid", tokenUuid);
+            consumed.put("item_uuid_scope", ItemIdentity.SCOPE_INSTANCE);
+        }
         consumed.putAll(StuffAuditEmitter.location(player));
         StuffAuditEmitter.emit("token.consumed", correlationId,
                 StuffAuditEmitter.tokenBusinessId("universal"), player.getUniqueId(),
@@ -148,9 +157,7 @@ public class WrapConfirmationGUI {
                 player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
                 PrettyLogger.warn("Wrap '" + wrap.getWrapName() + "' has null physical item during exchange");
 
-                emitUnlockFailed(player, wrap, correlationId, "wrap_physical_missing", "exchange");
-                refundToken(player, correlationId, tokenUuid);
-                player.sendMessage(Component.text("Your token has been refunded.", NamedTextColor.GREEN));
+                abortExchange(player, wrap, correlationId, tokenUuid, "wrap_physical_missing");
                 return;
             }
             wrapperItem = wrap.getPhysical().toItem(hmcWraps, player);
@@ -158,23 +165,39 @@ public class WrapConfirmationGUI {
 
             loaderWrapId = addWrapperPDC(wrapperItem, wrap, hmcWraps);
         } catch (Exception e) {
-            player.sendMessage(Component.text("Error: Failed to create wrap item.", NamedTextColor.RED));
-            player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
             PrettyLogger.warn("Failed to get physical item for wrap '" + wrap.getWrapName() + "' during exchange: " + e.getMessage());
-
-            emitUnlockFailed(player, wrap, correlationId, "wrapper_creation_failed", "exchange");
-            refundToken(player, correlationId, tokenUuid);
-            player.sendMessage(Component.text("Your token has been refunded.", NamedTextColor.GREEN));
+            abortCreation(player, wrap, correlationId, tokenUuid, "wrapper_creation_failed");
             return;
         }
 
+        if (loaderWrapId == null) {
+            // Untagged wrappers are not recognised by HMCWraps: never hand one out as a COMMITTED unlock.
+            abortCreation(player, wrap, correlationId, tokenUuid, "wrapper_tagging_failed");
+            return;
+        }
+
+        deliverWrapper(player, wrap, wrapperItem, loaderWrapId, correlationId, tokenUuid);
+    }
+
+    private void deliverWrapper(Player player, Wrap wrap, ItemStack wrapperItem, String loaderWrapId,
+                                UUID correlationId, String tokenUuid) {
         String effectiveWrapId = resolveWrapId(wrap, loaderWrapId);
         String wrapperUuid = ItemIdentity.stampShop(wrapperItem, tokenUuid);
         // Snapshot before delivery: Inventory.addItem may mutate the passed stack.
         String itemType = wrapperItem.getType().getKey().toString();
         int itemAmount = wrapperItem.getAmount();
+        String businessId = StuffAuditEmitter.wrapBusinessId(effectiveWrapId, wrap.getWrapName());
+        Map<String, Object> metadata = unlockMetadata(player, wrap, effectiveWrapId, itemType, itemAmount,
+                wrapperUuid, tokenUuid);
 
-        ItemDelivery.Result delivery = ItemDelivery.deliver(player, wrapperItem);
+        ItemDelivery.Result delivery;
+        try {
+            delivery = ItemDelivery.deliver(player, wrapperItem);
+        } catch (RuntimeException e) {
+            StuffAuditEmitter.emitDeliveryException("cosmetic.unlocked", correlationId, businessId,
+                    player.getUniqueId(), player.getUniqueId(), "universal_token_exchange", metadata, e);
+            throw e;
+        }
         if ("dropped".equals(delivery.mode())) {
             player.sendMessage(Component.text("Inventory full! Wrapper dropped at your feet.", NamedTextColor.YELLOW));
         } else if ("partial".equals(delivery.mode())) {
@@ -183,26 +206,60 @@ public class WrapConfirmationGUI {
                     + delivery.droppedAmount() + " dropped at your feet.", NamedTextColor.YELLOW));
         }
 
+        StuffAuditEmitter.emitDelivery("cosmetic.unlocked", correlationId, businessId, player.getUniqueId(),
+                player.getUniqueId(), "universal_token_exchange", delivery, metadata);
+
+        String wrapName = wrap.getName();
+        player.sendMessage(manager.getMessage("wrap-exchanged", "wrap", AdventureUtil.convertMiniMessageToLegacy(wrapName)));
+
+        PrettyLogger.debug(player.getName() + " exchanged a token for wrap: " + wrapName);
+    }
+
+    private Map<String, Object> unlockMetadata(Player player, Wrap wrap, String effectiveWrapId,
+                                               String itemType, int itemAmount,
+                                               String wrapperUuid, String tokenUuid) {
         Map<String, Object> metadata = new LinkedHashMap<>(StuffAuditEmitter.wrapMetadata(
                 effectiveWrapId, wrap.getWrapName(), itemType, itemAmount, true));
         metadata.put("delivery", "universal_token_exchange");
-        metadata.putAll(delivery.toMetadata());
         if (wrapperUuid != null) {
             metadata.put("item_uuid", wrapperUuid);
+            metadata.put("item_uuid_scope", ItemIdentity.SCOPE_INSTANCE);
             metadata.put("item_origin", ItemIdentity.ORIGIN_SHOP);
         } else {
             metadata.putAll(ItemIdentity.lotMetadata(ItemIdentity.ORIGIN_SHOP, null, itemAmount));
         }
         if (tokenUuid != null) metadata.put("parent_item_uuid", tokenUuid);
         metadata.putAll(StuffAuditEmitter.location(player));
-        StuffAuditEmitter.emit("cosmetic.unlocked", correlationId,
-                StuffAuditEmitter.wrapBusinessId(effectiveWrapId, wrap.getWrapName()), player.getUniqueId(),
-                player.getUniqueId(), null, "universal_token_exchange", metadata);
+        return metadata;
+    }
 
-        String wrapName = wrap.getName();
-        player.sendMessage(manager.getMessage("wrap-exchanged", "wrap", AdventureUtil.convertMiniMessageToLegacy(wrapName)));
+    /** Wrapper creation failed after the token was consumed: existing error text, FAILED row, refund. */
+    private void abortCreation(Player player, Wrap wrap, UUID correlationId, String tokenUuid, String reason) {
+        player.sendMessage(Component.text("Error: Failed to create wrap item.", NamedTextColor.RED));
+        player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
+        abortExchange(player, wrap, correlationId, tokenUuid, reason);
+    }
 
-        PrettyLogger.debug(player.getName() + " exchanged a token for wrap: " + wrapName);
+    private void abortExchange(Player player, Wrap wrap, UUID correlationId, String tokenUuid, String reason) {
+        emitUnlockFailed(player, wrap, correlationId, reason, "exchange");
+        refundToken(player, correlationId, tokenUuid);
+        player.sendMessage(Component.text("Your token has been refunded.", NamedTextColor.GREEN));
+    }
+
+    /**
+     * A wrap preview that cannot load is not an exchange attempt, but it is still worth a bounded
+     * trace: at most one FAILED row per player per wrap per {@link #PREVIEW_FAILURE_WINDOW_MS}.
+     */
+    private void emitPreviewFailed(Player player, Wrap wrap, String reason) {
+        long now = System.currentTimeMillis();
+        String key = player.getUniqueId() + "|" + wrap.getWrapName();
+        if (PREVIEW_FAILURES.size() > PREVIEW_FAILURE_PRUNE_SIZE) {
+            PREVIEW_FAILURES.values().removeIf(last -> now - last >= PREVIEW_FAILURE_WINDOW_MS);
+        }
+        Long last = PREVIEW_FAILURES.get(key);
+        if (last != null && now - last < PREVIEW_FAILURE_WINDOW_MS) return;
+        PREVIEW_FAILURES.put(key, now);
+        emitUnlockFailed(player, wrap, StuffAuditEmitter.correlationId(), reason, "preview");
     }
 
     private void emitUnlockFailed(Player player, Wrap wrap, UUID correlationId, String reason, String stage) {
@@ -222,16 +279,21 @@ public class WrapConfirmationGUI {
         ItemStack token = manager.createToken(1);
         // Refund tokens stay unstamped so they keep stacking with existing tokens; the lot uuid is row-only.
         Map<String, Object> lot = ItemIdentity.lotMetadata(ItemIdentity.ORIGIN_SHOP, null, 1);
-        ItemDelivery.Result delivery = ItemDelivery.deliver(player, token);
         Map<String, Object> metadata = new LinkedHashMap<>(StuffAuditEmitter.tokenMetadata("universal", 1, "wrap_exchange_refund"));
-        metadata.putAll(delivery.toMetadata());
         metadata.putAll(lot);
         if (consumedTokenUuid != null) metadata.put("parent_item_uuid", consumedTokenUuid);
         metadata.putAll(StuffAuditEmitter.location(player));
-        StuffAuditEmitter.emit("token.granted", correlationId,
-                StuffAuditEmitter.tokenBusinessId("universal"), player.getUniqueId(),
-                player.getUniqueId(), null, "wrap_exchange_refund",
-                metadata);
+        String businessId = StuffAuditEmitter.tokenBusinessId("universal");
+        ItemDelivery.Result delivery;
+        try {
+            delivery = ItemDelivery.deliver(player, token);
+        } catch (RuntimeException e) {
+            StuffAuditEmitter.emitDeliveryException("token.granted", correlationId, businessId,
+                    player.getUniqueId(), player.getUniqueId(), "wrap_exchange_refund", metadata, e);
+            throw e;
+        }
+        StuffAuditEmitter.emitDelivery("token.granted", correlationId, businessId, player.getUniqueId(),
+                player.getUniqueId(), "wrap_exchange_refund", delivery, metadata);
     }
 
     private String resolveWrapId(Wrap wrap, String loaderWrapId) {

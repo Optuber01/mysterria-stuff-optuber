@@ -21,6 +21,7 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 public class LastSprintListener implements Listener {
 
@@ -48,8 +49,23 @@ public class LastSprintListener implements Listener {
 
             boolean flagSaved = lastSprint.markGiftReceived(player.getUniqueId());
             List<ItemStack> kit = lastSprint.getRewardItems();
-            ItemDelivery.Result delivery = lastSprint.giveRewards(player, kit);
-            emitAutoGrant(player, kit.size(), delivery, flagSaved);
+            int kitAmount = 0;
+            for (ItemStack item : kit) {
+                if (item != null && !item.getType().isAir()) kitAmount += item.getAmount();
+            }
+            UUID correlationId = StuffAuditEmitter.correlationId();
+            ItemDelivery.Result delivery;
+            try {
+                delivery = lastSprint.giveRewards(player, kit);
+            } catch (RuntimeException e) {
+                StuffAuditEmitter.emitDeliveryException("kit.granted", correlationId, "kit:last_sprint",
+                        null, player.getUniqueId(), "first_join",
+                        autoGrantMetadata(player, kit.size(), kitAmount, flagSaved), e);
+                throw e;
+            }
+            StuffAuditEmitter.emitDelivery("kit.granted", correlationId, "kit:last_sprint",
+                    null, player.getUniqueId(), "first_join", delivery,
+                    autoGrantMetadata(player, kit.size(), delivery.requestedAmount(), flagSaved));
 
             player.showTitle(Title.title(
                     Component.text("Welcome to Mysterria!").color(ACCENT)
@@ -95,18 +111,16 @@ public class LastSprintListener implements Listener {
         }, 20L);
     }
 
-    private void emitAutoGrant(Player player, int stackCount, ItemDelivery.Result delivery,
-                               boolean flagSaved) {
+    private static Map<String, Object> autoGrantMetadata(Player player, int stackCount, int amount,
+                                                         boolean flagSaved) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("actor_name", "system");
         metadata.put("grant_type", "last_sprint_kit");
-        metadata.put("amount", delivery.requestedAmount());
+        metadata.put("amount", amount);
         metadata.put("delivery", "first_join");
-        metadata.putAll(delivery.toMetadata());
         metadata.put("stack_count", stackCount);
         metadata.put("gift_flag_saved", flagSaved);
         metadata.putAll(StuffAuditEmitter.location(player));
-        StuffAuditEmitter.emit("kit.granted", StuffAuditEmitter.correlationId(), "kit:last_sprint",
-                null, player.getUniqueId(), null, "first_join", metadata);
+        return metadata;
     }
 }

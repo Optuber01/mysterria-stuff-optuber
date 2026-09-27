@@ -49,13 +49,37 @@ written to the item, so it cannot be read back on consumption; `item_uuid` on a
 Wrapper items produced by a universal-token exchange are stamped with
 `item_uuid`, `item_origin=SHOP` and `item_parent` only when they are
 non-stackable (max stack size 1, amount 1); the row then carries that
-per-instance `item_uuid` top-level. Stackable wrapper items are left unstamped
-and the row carries the same row-only lot fields instead. No player-visible
-stacking behaviour changes.
+per-instance `item_uuid` top-level with `item_uuid_scope=instance`. Stackable
+wrapper items are left unstamped and the row carries the same row-only lot
+fields instead. No player-visible stacking behaviour changes.
+
+`item_uuid_scope` is always present next to `item_uuid`: `instance` means the id
+is written to the item PDC and names one item; `lot` means the id exists only in
+the row and names one granted stack. Consumers must not join or dedupe on
+`item_uuid` without also checking the scope. Elytra and Last Sprint kit grant
+rows carry the delivered items' existing `item_uuid` (scope `instance`) when
+they have one; a kit with several identified items carries `item_uuids`
+(comma separated) and `item_uuid_count` instead.
+
+## Delivery outcomes
+
+Grant rows (`token.granted`, `item.granted`, `kit.granted`, `cosmetic.unlocked`)
+carry `delivery_mode`, `delivered_amount` (inventory) and `dropped_amount`
+(ground). A ground drop only counts when the spawned item entity is still valid;
+otherwise the amount is reported as `undelivered_amount` and the row is FAILED
+with `failure=items_undelivered` (`delivery_mode` `undelivered` or
+`partial_undelivered`). A delivery that throws emits a FAILED row with
+`failure=delivery_exception` and `error_class` before the exception propagates.
+A failed elytra creation emits a FAILED `item.granted` row
+(`failure=item_creation_failed`). A universal-token exchange whose wrapper cannot
+be created or tagged for HMCWraps emits FAILED `cosmetic.unlocked`
+(`failure_stage=exchange`) and refunds the token.
 
 ## Deliberate exclusions
 
-GUI previews, rendering, routine interactions, transient sprint/listener
+GUI previews (except a bounded FAILED `cosmetic.unlocked` with
+`failure_stage=preview` when a wrap preview cannot load, at most once per player
+per wrap per 60 seconds), rendering, routine interactions, transient sprint/listener
 effects, cosmetic equip/remove events, and HMCWraps ownership changes are not
 emitted here. HMCWraps owns the durable cosmetic ownership model and does not
 expose an ownership-mutation API in its integration contract; the HMCWraps

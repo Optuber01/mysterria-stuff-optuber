@@ -211,12 +211,15 @@ public class MainCommand implements CommandExecutor {
             case "elytra" -> {
                 ItemStack elytra = getElytra();
                 if (elytra == null) {
+                    emitStaffItemGrantFailed(sender, target, "item.granted", "item:reinforced_elytra",
+                            "reinforced_elytra", 1, "item_creation_failed", null);
                     sender.sendMessage(Component.text("Failed to create elytra item!")
                             .color(NamedTextColor.RED));
                     return true;
                 }
 
-                ItemDelivery.Result delivery = ItemDelivery.deliver(target, elytra);
+                ItemDelivery.Result delivery = deliverStaffGrant(sender, target, elytra, "item.granted",
+                        "item:reinforced_elytra", "reinforced_elytra", null);
                 emitStaffItemGrant(sender, target, "item.granted", "item:reinforced_elytra",
                         "reinforced_elytra", delivery, null);
 
@@ -977,29 +980,73 @@ public class MainCommand implements CommandExecutor {
         UUID actorId = StuffAuditEmitter.actorId(sender);
         Map<String, Object> lot = ItemIdentity.lotMetadata(ItemIdentity.ORIGIN_STAFF_GRANT,
                 actorId == null ? "console" : actorId.toString(), amount);
-        ItemDelivery.Result delivery = ItemDelivery.deliver(target, token);
         Map<String, Object> metadata = new LinkedHashMap<>(
                 StuffAuditEmitter.tokenMetadata(tokenType, amount, "admin_give"));
-        metadata.putAll(delivery.toMetadata());
         metadata.putAll(lot);
         metadata.putAll(StuffAuditEmitter.location(target));
-        StuffAuditEmitter.emit("token.granted", StuffAuditEmitter.correlationId(),
-                StuffAuditEmitter.tokenBusinessId(tokenType), StuffAuditEmitter.actorId(sender),
-                target.getUniqueId(), null, "admin_give", metadata);
+        UUID correlationId = StuffAuditEmitter.correlationId();
+        String businessId = StuffAuditEmitter.tokenBusinessId(tokenType);
+        ItemDelivery.Result delivery;
+        try {
+            delivery = ItemDelivery.deliver(target, token);
+        } catch (RuntimeException e) {
+            StuffAuditEmitter.emitDeliveryException("token.granted", correlationId, businessId,
+                    actorId, target.getUniqueId(), "admin_give", metadata, e);
+            throw e;
+        }
+        StuffAuditEmitter.emitDelivery("token.granted", correlationId, businessId,
+                actorId, target.getUniqueId(), "admin_give", delivery, metadata);
+    }
+
+    /** Delivers a staff grant; a thrown delivery records a FAILED row and is rethrown unchanged. */
+    private ItemDelivery.Result deliverStaffGrant(CommandSender sender, Player target, ItemStack item,
+                                                  String operation, String businessId, String grantType,
+                                                  Map<String, Object> extra) {
+        int amount = item.getAmount();
+        try {
+            return ItemDelivery.deliver(target, item);
+        } catch (RuntimeException e) {
+            StuffAuditEmitter.emitDeliveryException(operation, StuffAuditEmitter.correlationId(), businessId,
+                    StuffAuditEmitter.actorId(sender), target.getUniqueId(), "admin_give",
+                    staffGrantMetadata(target, grantType, amount, extra), e);
+            throw e;
+        }
     }
 
     private void emitStaffItemGrant(CommandSender sender, Player target, String operation,
                                     String businessId, String grantType, ItemDelivery.Result delivery,
                                     Map<String, Object> extra) {
+        StuffAuditEmitter.emitDelivery(operation, StuffAuditEmitter.correlationId(), businessId,
+                StuffAuditEmitter.actorId(sender), target.getUniqueId(), "admin_give", delivery,
+                staffGrantMetadata(target, grantType, delivery.requestedAmount(), extra));
+    }
+
+    private void emitStaffItemGrantFailed(CommandSender sender, Player target, String operation,
+                                          String businessId, String grantType, int amount,
+                                          String failure, Map<String, Object> extra) {
+        Map<String, Object> metadata = staffGrantMetadata(target, grantType, amount, extra);
+        metadata.put("failure", failure);
+        StuffAuditEmitter.emitFailed(operation, StuffAuditEmitter.correlationId(), businessId,
+                StuffAuditEmitter.actorId(sender), target.getUniqueId(), null, "admin_give", metadata);
+    }
+
+    private static Map<String, Object> staffGrantMetadata(Player target, String grantType, int amount,
+                                                          Map<String, Object> extra) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("grant_type", grantType);
-        metadata.put("amount", delivery.requestedAmount());
+        metadata.put("amount", amount);
         metadata.put("delivery", "admin_give");
-        metadata.putAll(delivery.toMetadata());
         if (extra != null) metadata.putAll(extra);
         metadata.putAll(StuffAuditEmitter.location(target));
-        StuffAuditEmitter.emit(operation, StuffAuditEmitter.correlationId(), businessId,
-                StuffAuditEmitter.actorId(sender), target.getUniqueId(), null, "admin_give", metadata);
+        return metadata;
+    }
+
+    private static int totalAmount(List<ItemStack> items) {
+        int total = 0;
+        for (ItemStack item : items) {
+            if (item != null && !item.getType().isAir()) total += item.getAmount();
+        }
+        return total;
     }
 
     private boolean handleLastSprint(CommandSender sender, String[] args) {
@@ -1057,7 +1104,17 @@ public class MainCommand implements CommandExecutor {
                     return true;
                 }
                 List<ItemStack> kit = lastSprint.getRewardItems();
-                ItemDelivery.Result kitDelivery = lastSprint.giveRewards(target, kit);
+                int kitAmount = totalAmount(kit);
+                ItemDelivery.Result kitDelivery;
+                try {
+                    kitDelivery = lastSprint.giveRewards(target, kit);
+                } catch (RuntimeException e) {
+                    StuffAuditEmitter.emitDeliveryException("kit.granted", StuffAuditEmitter.correlationId(),
+                            "kit:last_sprint", StuffAuditEmitter.actorId(sender), target.getUniqueId(),
+                            "admin_give", staffGrantMetadata(target, "last_sprint_kit", kitAmount,
+                                    Map.of("stack_count", kit.size())), e);
+                    throw e;
+                }
                 boolean flagSaved = lastSprint.markGiftReceived(target.getUniqueId());
                 emitStaffItemGrant(sender, target, "kit.granted", "kit:last_sprint", "last_sprint_kit",
                         kitDelivery, Map.of("stack_count", kit.size(), "gift_flag_saved", flagSaved));

@@ -66,7 +66,10 @@ public class JoinMsgTokenListener implements Listener {
         UUID correlationId = StuffAuditEmitter.correlationId();
         Map<String, Object> metadata = new LinkedHashMap<>(
                 StuffAuditEmitter.tokenMetadata("joinmsg", 1, "joinmsg_session_started"));
-        if (tokenUuid != null) metadata.put("item_uuid", tokenUuid);
+        if (tokenUuid != null) {
+            metadata.put("item_uuid", tokenUuid);
+            metadata.put("item_uuid_scope", ItemIdentity.SCOPE_INSTANCE);
+        }
         metadata.putAll(StuffAuditEmitter.location(player));
         StuffAuditEmitter.emit("token.consumed", correlationId,
                 StuffAuditEmitter.tokenBusinessId("joinmsg"), player.getUniqueId(),
