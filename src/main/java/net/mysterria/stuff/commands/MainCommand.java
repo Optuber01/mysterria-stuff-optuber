@@ -973,16 +973,15 @@ public class MainCommand implements CommandExecutor {
 
     private void giveStaffToken(CommandSender sender, Player target, ItemStack token,
                                 String tokenType, int amount) {
-        // Tokens are fungible and stackable: never PDC-stamp them (see ItemIdentity); use a row-level mint id.
-        String mintId = ItemIdentity.newMintId();
+        // Tokens are fungible and stackable: never PDC-stamp them (see ItemIdentity); one row-only lot uuid per grant.
+        UUID actorId = StuffAuditEmitter.actorId(sender);
+        Map<String, Object> lot = ItemIdentity.lotMetadata(ItemIdentity.ORIGIN_STAFF_GRANT,
+                actorId == null ? "console" : actorId.toString(), amount);
         ItemDelivery.Result delivery = ItemDelivery.deliver(target, token);
         Map<String, Object> metadata = new LinkedHashMap<>(
                 StuffAuditEmitter.tokenMetadata(tokenType, amount, "admin_give"));
         metadata.putAll(delivery.toMetadata());
-        metadata.put("mint_id", mintId);
-        metadata.put("item_origin", ItemIdentity.ORIGIN_STAFF_GRANT);
-        metadata.put("item_minted_by", StuffAuditEmitter.actorId(sender) == null
-                ? "console" : StuffAuditEmitter.actorId(sender).toString());
+        metadata.putAll(lot);
         metadata.putAll(StuffAuditEmitter.location(target));
         StuffAuditEmitter.emit("token.granted", StuffAuditEmitter.correlationId(),
                 StuffAuditEmitter.tokenBusinessId(tokenType), StuffAuditEmitter.actorId(sender),

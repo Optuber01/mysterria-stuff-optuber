@@ -6,6 +6,8 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -14,8 +16,11 @@ import java.util.UUID;
  * <p>Only non-stackable single items (max stack size 1, amount 1) are ever stamped. CoI treats
  * {@code circleofimagination:item_uuid} as a per-instance unique id and its dupe scan flags any uuid
  * whose summed amount exceeds 1, and a per-instance PDC value would also stop otherwise identical
- * items from stacking. Fungible, stackable items such as tokens are therefore never stamped; their
- * audit rows carry a row-level {@code mint_id} from {@link #newMintId()} instead.
+ * items from stacking. Fungible, stackable items such as tokens are therefore never stamped. They
+ * are identified per lot instead: {@link #lotMetadata} mints one {@code item_uuid} per granted stack
+ * and writes it to the audit row only (with {@code item_mint_qty}, {@code item_origin} and
+ * {@code item_minted_by}), leaving the item PDC identical across grants so separately granted
+ * stacks keep stacking exactly as they did before auditing was added.
  */
 public final class ItemIdentity {
 
@@ -59,9 +64,21 @@ public final class ItemIdentity {
         return item != null && item.getAmount() == 1 && item.getMaxStackSize() == 1;
     }
 
-    /** Row-level identifier for a mint of fungible items that are deliberately not PDC-stamped. */
-    public static String newMintId() {
-        return UUID.randomUUID().toString();
+    /**
+     * Row-only lot identity for one granted stack of fungible items that are deliberately not
+     * PDC-stamped. The returned {@code item_uuid} names the lot, not an item instance, and is never
+     * written to the item.
+     *
+     * @param mintedBy actor UUID string, "console", or null to omit
+     */
+    public static Map<String, Object> lotMetadata(String origin, String mintedBy, int amount) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("item_uuid", UUID.randomUUID().toString());
+        metadata.put("item_uuid_scope", "lot");
+        metadata.put("item_mint_qty", amount);
+        metadata.put("item_origin", origin);
+        if (mintedBy != null) metadata.put("item_minted_by", mintedBy);
+        return metadata;
     }
 
     public static String readUuid(ItemStack item) {

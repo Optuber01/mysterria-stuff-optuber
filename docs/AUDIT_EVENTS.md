@@ -32,20 +32,26 @@ Console-issued rows with no online subject carry no location.
 
 ## Item identity
 
-Tokens (universal and joinmsg) are fungible and stackable, so they are never
-stamped with `circleofimagination:item_uuid` or any other per-instance PDC
-value. Stamping would stop tokens from different grants/refunds stacking, and
-CoI's dupe scan treats that key as unique per instance (a stack of N, or a split
-stack, would be reported as a dupe). Token rows carry a row-level `mint_id`
-plus `item_origin` (`STAFF_GRANT` for admin gives with `item_minted_by`, `SHOP`
-for refunds) instead. `item_uuid` on a `token.consumed` row appears only if the
-consumed stack already carried one.
+Tokens (universal and joinmsg) are fungible and stackable. On origin/main every
+token of a type carries only the same constant marker PDC, so separately
+granted stacks stack together. To keep that, tokens are never stamped with
+`circleofimagination:item_uuid` or any other per-instance PDC value (stamping
+would also trip CoI's dupe scan, which treats that key as unique per instance).
+
+Instead each granted stack is identified per lot, in the audit row only: the
+`token.granted` row carries top-level `item_uuid` (a fresh UUID per granted
+stack, `item_uuid_scope=lot`), `item_mint_qty` (the stack amount),
+`item_origin` (`STAFF_GRANT` for admin gives, `SHOP` for refunds) and, for
+admin gives, `item_minted_by` (actor UUID or `console`). The lot UUID is never
+written to the item, so it cannot be read back on consumption; `item_uuid` on a
+`token.consumed` row appears only if the consumed stack already carried one.
 
 Wrapper items produced by a universal-token exchange are stamped with
 `item_uuid`, `item_origin=SHOP` and `item_parent` only when they are
-non-stackable (max stack size 1, amount 1); the row then carries `item_uuid`
-top-level. Stackable wrapper items are left unstamped and the row carries
-`mint_id` instead. No player-visible stacking behaviour changes.
+non-stackable (max stack size 1, amount 1); the row then carries that
+per-instance `item_uuid` top-level. Stackable wrapper items are left unstamped
+and the row carries the same row-only lot fields instead. No player-visible
+stacking behaviour changes.
 
 ## Deliberate exclusions
 
