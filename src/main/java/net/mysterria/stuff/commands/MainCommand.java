@@ -942,7 +942,11 @@ public class MainCommand implements CommandExecutor {
         metadata.put("message_type", messageType);
         metadata.put("target_name", targetName);
         metadata.putAll(extra);
-        metadata.putAll(StuffAuditEmitter.location(target == null ? null : target.getPlayer()));
+        Map<String, Object> targetLocation = StuffAuditEmitter.location(target == null ? null : target.getPlayer());
+        if (!targetLocation.isEmpty()) {
+            metadata.put("location_source", "subject");
+            metadata.putAll(targetLocation);
+        }
         emitAdminOutcome(sender, "joinmsg." + operation, "joinmsg:" + stableTarget, subjectId,
                 "admin_mutation", metadata, committed);
     }
@@ -952,6 +956,11 @@ public class MainCommand implements CommandExecutor {
                                   UUID subjectId, String reason, Map<String, Object> metadata,
                                   boolean committed) {
         UUID actorId = StuffAuditEmitter.actorId(sender);
+        if (!metadata.containsKey("world") && sender instanceof Player actor) {
+            // No online subject to locate: fall back to the admin actor's position.
+            metadata.put("location_source", "actor");
+            metadata.putAll(StuffAuditEmitter.location(actor));
+        }
         if (committed) {
             StuffAuditEmitter.emit(operation, StuffAuditEmitter.correlationId(), businessId,
                     actorId, subjectId, null, reason, metadata);

@@ -22,6 +22,14 @@ correlation UUID. Player UUIDs are used as actor/subject IDs where available;
 console actors remain unset. Metadata keys are snake_case and bounded by the
 shared audit contract.
 
+## Location
+
+Rows that involve a player carry `world`, `x`, `y`, `z`. Admin join-message rows
+(`message_set`, `message_removed`, `default_changed`, `firstjoin_changed`) use the
+online subject's position when there is one (`location_source=subject`).
+Otherwise they use the in-game admin actor's position (`location_source=actor`).
+Console-issued rows with no online subject carry no location.
+
 ## Item identity
 
 Tokens (universal and joinmsg) are fungible and stackable, so they are never
