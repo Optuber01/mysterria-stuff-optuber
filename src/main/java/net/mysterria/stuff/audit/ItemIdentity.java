@@ -1,5 +1,6 @@
 package net.mysterria.stuff.audit;
 
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -83,6 +84,48 @@ public final class ItemIdentity {
         metadata.put("item_origin", origin);
         if (mintedBy != null) metadata.put("item_minted_by", mintedBy);
         return metadata;
+    }
+
+    /**
+     * Identity fields for a token about to be consumed; call before the stack is decremented.
+     * A stamped token yields its instance {@code item_uuid}. Tokens are never stamped (see class
+     * doc), so the usual case is a fingerprint instead: {@code token_marker} (the PDC key that
+     * identified the token), {@code material}, {@code display_name_sha256} (plain text) and
+     * {@code item_sha256} (serialized bytes of a one-item copy, so the hash does not depend on how
+     * many tokens were in the stack).
+     */
+    public static Map<String, Object> consumedTokenIdentity(ItemStack item, String tokenMarker) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        if (item == null) return metadata;
+        String itemUuid = readUuid(item);
+        if (itemUuid != null) {
+            metadata.put("item_uuid", itemUuid);
+            metadata.put("item_uuid_scope", SCOPE_INSTANCE);
+            return metadata;
+        }
+        if (tokenMarker != null) metadata.put("token_marker", tokenMarker);
+        metadata.put("material", item.getType().getKey().toString());
+        String displayNameHash = displayNameHash(item);
+        if (displayNameHash != null) metadata.put("display_name_sha256", displayNameHash);
+        String itemHash = itemBytesHash(item);
+        if (itemHash != null) metadata.put("item_sha256", itemHash);
+        return metadata;
+    }
+
+    private static String displayNameHash(ItemStack item) {
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null || !meta.hasDisplayName() || meta.displayName() == null) return null;
+        return StuffAuditEmitter.sha256(PlainTextComponentSerializer.plainText().serialize(meta.displayName()));
+    }
+
+    private static String itemBytesHash(ItemStack item) {
+        try {
+            ItemStack single = item.clone();
+            single.setAmount(1);
+            return StuffAuditEmitter.sha256(single.serializeAsBytes());
+        } catch (RuntimeException unserializable) {
+            return null;
+        }
     }
 
     public static String readUuid(ItemStack item) {

@@ -82,6 +82,11 @@ public class UniversalTokenManager {
     }
 
 
+    /** The PDC key that marks {@code item} as a universal token, or null if it is not one. */
+    public String tokenMarker(ItemStack item) {
+        return isToken(item) ? tokenKey.toString() : null;
+    }
+
     public boolean consumeToken(ItemStack item, int amount) {
         if (!isToken(item)) {
             return false;
