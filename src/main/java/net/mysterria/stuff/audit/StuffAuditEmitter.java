@@ -4,7 +4,15 @@ import dev.ua.ikeepcalm.mysterria.audit.client.api.AuditOutcome;
 import dev.ua.ikeepcalm.mysterria.audit.client.api.AuditPrivacy;
 import dev.ua.ikeepcalm.mysterria.audit.client.api.AuditProducer;
 import dev.ua.ikeepcalm.mysterria.audit.client.api.AuditRisk;
+import org.bukkit.Location;
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -34,12 +42,30 @@ public final class StuffAuditEmitter {
 
     /**
      * Auditing is optional. This method only enqueues an immutable emission on
-     * the provider's side and never gates gameplay or the local store.
+     * the provider's side and never gates gameplay or the local store. Callers
+     * must only use this after the state change has been applied and persisted.
      */
-    public static void emit(JavaPlugin plugin, String operation,
+    public static void emit(String operation,
                             UUID correlationId, String businessId,
                             UUID actorId, UUID subjectId, UUID targetId, String reason,
                             Map<String, ?> values) {
+        emit(AuditOutcome.COMMITTED, operation, correlationId, businessId, actorId, subjectId,
+                targetId, reason, values);
+    }
+
+    /** Records an operation that was attempted but did not take effect. */
+    public static void emitFailed(String operation,
+                                  UUID correlationId, String businessId,
+                                  UUID actorId, UUID subjectId, UUID targetId, String reason,
+                                  Map<String, ?> values) {
+        emit(AuditOutcome.FAILED, operation, correlationId, businessId, actorId, subjectId,
+                targetId, reason, values);
+    }
+
+    private static void emit(AuditOutcome outcome, String operation,
+                             UUID correlationId, String businessId,
+                             UUID actorId, UUID subjectId, UUID targetId, String reason,
+                             Map<String, ?> values) {
         if (operation == null || operation.isBlank() || correlationId == null
                 || businessId == null || businessId.isBlank()) {
             return;
@@ -49,12 +75,44 @@ public final class StuffAuditEmitter {
             AuditProducer current = producer;
             if (current == null) return;
 
-            current.emit(NAMESPACE + operation, AuditOutcome.COMMITTED, AuditRisk.NORMAL,
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            if (actorId == null) metadata.put("actor_name", "console");
+            if (values != null) metadata.putAll(values);
+            current.emit(NAMESPACE + operation, outcome, AuditRisk.NORMAL,
                     AuditPrivacy.STAFF_RESTRICTED, correlationId, businessId, actorId,
-                    subjectId, targetId, reason, boundedMetadata(values));
+                    subjectId, targetId, reason, boundedMetadata(metadata));
         } catch (Throwable failure) {
             AuditProducer current = producer;
             if (current != null) current.recordFailure();
+        }
+    }
+
+    /** Actor UUID for a command sender; null for console and other non-player senders. */
+    public static UUID actorId(CommandSender sender) {
+        return sender instanceof Player player ? player.getUniqueId() : null;
+    }
+
+    /** Position metadata (world, x, y, z) for a player; empty when the player is absent. */
+    public static Map<String, Object> location(Player player) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        if (player == null) return values;
+        Location location = player.getLocation();
+        if (location.getWorld() != null) values.put("world", location.getWorld().getName());
+        values.put("x", location.getBlockX());
+        values.put("y", location.getBlockY());
+        values.put("z", location.getBlockZ());
+        return values;
+    }
+
+    /** Lowercase hex SHA-256 of the given text, for fingerprinting content without storing it. */
+    public static String sha256(String text) {
+        if (text == null) return null;
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(text.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException impossible) {
+            return null;
         }
     }
 

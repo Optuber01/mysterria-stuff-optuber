@@ -9,7 +9,9 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.mysterria.stuff.features.hmcwraps.UniversalTokenManager;
+import net.mysterria.stuff.audit.ItemIdentity;
 import net.mysterria.stuff.audit.StuffAuditEmitter;
+import net.mysterria.stuff.utils.ItemDelivery;
 import net.mysterria.stuff.utils.AdventureUtil;
 import net.mysterria.stuff.utils.PrettyLogger;
 import org.bukkit.Material;
@@ -121,16 +123,20 @@ public class WrapConfirmationGUI {
         }
 
         UUID correlationId = StuffAuditEmitter.correlationId();
+        String tokenUuid = ItemIdentity.readUuid(heldItem);
 
         if (!manager.consumeToken(heldItem, 1)) {
             player.sendMessage(manager.getMessage("no-token-in-hand"));
             return;
         }
 
-        StuffAuditEmitter.emit(manager.getPlugin(), "token.consumed", correlationId,
-                StuffAuditEmitter.tokenBusinessId("universal"), player.getUniqueId(),
-                player.getUniqueId(), null, "wrap_exchange",
+        Map<String, Object> consumed = new LinkedHashMap<>(
                 StuffAuditEmitter.tokenMetadata("universal", 1, "wrap_exchange"));
+        if (tokenUuid != null) consumed.put("item_uuid", tokenUuid);
+        consumed.putAll(StuffAuditEmitter.location(player));
+        StuffAuditEmitter.emit("token.consumed", correlationId,
+                StuffAuditEmitter.tokenBusinessId("universal"), player.getUniqueId(),
+                player.getUniqueId(), null, "wrap_exchange", consumed);
 
         ItemStack wrapperItem;
         String loaderWrapId;
@@ -140,9 +146,8 @@ public class WrapConfirmationGUI {
                 player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
                 PrettyLogger.warn("Wrap '" + wrap.getWrapName() + "' has null physical item during exchange");
 
-
-                ItemStack tokenRefund = manager.createToken(1);
-                emitTokenRefund(player, tokenRefund, correlationId);
+                emitUnlockFailed(player, wrap, correlationId, "wrap_physical_missing");
+                refundToken(player, correlationId, tokenUuid);
                 player.sendMessage(Component.text("Your token has been refunded.", NamedTextColor.GREEN));
                 return;
             }
@@ -155,30 +160,35 @@ public class WrapConfirmationGUI {
             player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
             PrettyLogger.warn("Failed to get physical item for wrap '" + wrap.getWrapName() + "' during exchange: " + e.getMessage());
 
-
-            ItemStack tokenRefund = manager.createToken(1);
-            emitTokenRefund(player, tokenRefund, correlationId);
+            emitUnlockFailed(player, wrap, correlationId, "wrapper_creation_failed");
+            refundToken(player, correlationId, tokenUuid);
             player.sendMessage(Component.text("Your token has been refunded.", NamedTextColor.GREEN));
             return;
         }
 
-        Map<String, Object> delivery = deliverItem(player, wrapperItem);
-        String deliveryMode = String.valueOf(delivery.get("delivery_mode"));
-        if ("dropped".equals(deliveryMode)) {
+        String effectiveWrapId = resolveWrapId(wrap, loaderWrapId);
+        String wrapperUuid = ItemIdentity.stampShop(wrapperItem, tokenUuid);
+        // Snapshot before delivery: Inventory.addItem may mutate the passed stack.
+        String itemType = wrapperItem.getType().getKey().toString();
+        int itemAmount = wrapperItem.getAmount();
+
+        ItemDelivery.Result delivery = ItemDelivery.deliver(player, wrapperItem);
+        if ("dropped".equals(delivery.mode())) {
             player.sendMessage(Component.text("Inventory full! Wrapper dropped at your feet.", NamedTextColor.YELLOW));
-        } else if ("partial".equals(deliveryMode)) {
+        } else if ("partial".equals(delivery.mode())) {
             player.sendMessage(Component.text("Inventory had limited space! "
-                    + delivery.get("delivered_amount") + " wrapper item(s) were added and "
-                    + delivery.get("dropped_amount") + " dropped at your feet.", NamedTextColor.YELLOW));
+                    + delivery.deliveredAmount() + " wrapper item(s) were added and "
+                    + delivery.droppedAmount() + " dropped at your feet.", NamedTextColor.YELLOW));
         }
 
-        String effectiveWrapId = resolveWrapId(wrap, loaderWrapId);
         Map<String, Object> metadata = new LinkedHashMap<>(StuffAuditEmitter.wrapMetadata(
-                effectiveWrapId, wrap.getWrapName(), wrapperItem.getType().getKey().toString(),
-                wrapperItem.getAmount(), true));
+                effectiveWrapId, wrap.getWrapName(), itemType, itemAmount, true));
         metadata.put("delivery", "universal_token_exchange");
-        metadata.putAll(delivery);
-        StuffAuditEmitter.emit(manager.getPlugin(), "cosmetic.unlocked", correlationId,
+        metadata.putAll(delivery.toMetadata());
+        if (wrapperUuid != null) metadata.put("item_uuid", wrapperUuid);
+        if (tokenUuid != null) metadata.put("parent_item_uuid", tokenUuid);
+        metadata.putAll(StuffAuditEmitter.location(player));
+        StuffAuditEmitter.emit("cosmetic.unlocked", correlationId,
                 StuffAuditEmitter.wrapBusinessId(effectiveWrapId, wrap.getWrapName()), player.getUniqueId(),
                 player.getUniqueId(), null, "universal_token_exchange", metadata);
 
@@ -188,30 +198,31 @@ public class WrapConfirmationGUI {
         PrettyLogger.debug(player.getName() + " exchanged a token for wrap: " + wrapName);
     }
 
-    private void emitTokenRefund(Player player, ItemStack token, UUID correlationId) {
-        Map<String, Object> delivery = deliverItem(player, token);
+    private void emitUnlockFailed(Player player, Wrap wrap, UUID correlationId, String reason) {
+        String wrapId = wrap.getUuid();
+        Map<String, Object> metadata = new LinkedHashMap<>(StuffAuditEmitter.wrapMetadata(
+                wrapId, wrap.getWrapName(), null, 0, true));
+        metadata.put("delivery", "universal_token_exchange");
+        metadata.put("failure", reason);
+        metadata.putAll(StuffAuditEmitter.location(player));
+        StuffAuditEmitter.emitFailed("cosmetic.unlocked", correlationId,
+                StuffAuditEmitter.wrapBusinessId(wrapId, wrap.getWrapName()), player.getUniqueId(),
+                player.getUniqueId(), null, reason, metadata);
+    }
+
+    private void refundToken(Player player, UUID correlationId, String consumedTokenUuid) {
+        ItemStack token = manager.createToken(1);
+        String refundUuid = ItemIdentity.stampShop(token, consumedTokenUuid);
+        ItemDelivery.Result delivery = ItemDelivery.deliver(player, token);
         Map<String, Object> metadata = new LinkedHashMap<>(StuffAuditEmitter.tokenMetadata("universal", 1, "wrap_exchange_refund"));
-        metadata.putAll(delivery);
-        StuffAuditEmitter.emit(manager.getPlugin(), "token.granted", correlationId,
+        metadata.putAll(delivery.toMetadata());
+        if (refundUuid != null) metadata.put("item_uuid", refundUuid);
+        if (consumedTokenUuid != null) metadata.put("parent_item_uuid", consumedTokenUuid);
+        metadata.putAll(StuffAuditEmitter.location(player));
+        StuffAuditEmitter.emit("token.granted", correlationId,
                 StuffAuditEmitter.tokenBusinessId("universal"), player.getUniqueId(),
                 player.getUniqueId(), null, "wrap_exchange_refund",
                 metadata);
-    }
-
-    private Map<String, Object> deliverItem(Player player, ItemStack item) {
-        int requestedAmount = item.getAmount();
-        Map<Integer, ItemStack> leftovers = player.getInventory().addItem(item);
-        int droppedAmount = 0;
-        for (ItemStack leftover : leftovers.values()) {
-            if (leftover == null || leftover.getAmount() <= 0) continue;
-            droppedAmount += leftover.getAmount();
-            player.getWorld().dropItemNaturally(player.getLocation(), leftover);
-        }
-        int deliveredAmount = Math.max(0, requestedAmount - droppedAmount);
-        String deliveryMode = droppedAmount == 0 ? "inventory"
-                : deliveredAmount == 0 ? "dropped" : "partial";
-        return Map.of("delivery_mode", deliveryMode,
-                "delivered_amount", deliveredAmount, "dropped_amount", droppedAmount);
     }
 
     private String resolveWrapId(Wrap wrap, String loaderWrapId) {

@@ -6,14 +6,21 @@ import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.title.Title;
 import net.mysterria.stuff.MysterriaStuff;
+import net.mysterria.stuff.audit.StuffAuditEmitter;
+import net.mysterria.stuff.utils.ItemDelivery;
 import net.mysterria.stuff.utils.PrettyLogger;
 import org.bukkit.Bukkit;
 import org.bukkit.Sound;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.inventory.ItemStack;
 
 import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 public class LastSprintListener implements Listener {
 
@@ -39,8 +46,10 @@ public class LastSprintListener implements Listener {
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (!player.isOnline()) return;
 
-            lastSprint.markGiftReceived(player.getUniqueId());
-            lastSprint.giveRewards(player);
+            boolean flagSaved = lastSprint.markGiftReceived(player.getUniqueId());
+            List<ItemStack> kit = lastSprint.getRewardItems();
+            ItemDelivery.Result delivery = lastSprint.giveRewards(player, kit);
+            emitAutoGrant(player, kit.size(), delivery, flagSaved);
 
             player.showTitle(Title.title(
                     Component.text("Welcome to Mysterria!").color(ACCENT)
@@ -86,4 +95,18 @@ public class LastSprintListener implements Listener {
         }, 20L);
     }
 
+    private void emitAutoGrant(Player player, int stackCount, ItemDelivery.Result delivery,
+                               boolean flagSaved) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("actor_name", "system");
+        metadata.put("grant_type", "last_sprint_kit");
+        metadata.put("amount", delivery.requestedAmount());
+        metadata.put("delivery", "first_join");
+        metadata.putAll(delivery.toMetadata());
+        metadata.put("stack_count", stackCount);
+        metadata.put("gift_flag_saved", flagSaved);
+        metadata.putAll(StuffAuditEmitter.location(player));
+        StuffAuditEmitter.emit("kit.granted", StuffAuditEmitter.correlationId(), "kit:last_sprint",
+                null, player.getUniqueId(), null, "first_join", metadata);
+    }
 }
