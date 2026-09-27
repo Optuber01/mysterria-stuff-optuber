@@ -20,8 +20,24 @@ Every independent operation gets a fresh correlation UUID. Related lifecycle
 events, such as a token consumption and its cancellation refund, reuse the same
 correlation UUID. Player UUIDs are used as actor/subject IDs where available;
 console actors remain unset. Metadata keys are snake_case and bounded by the
-shared audit contract. This repository does not invent item UUIDs: `item_uuid`
-is emitted only when an authoritative item owner exposes one.
+shared audit contract.
+
+## Item identity
+
+Tokens (universal and joinmsg) are fungible and stackable, so they are never
+stamped with `circleofimagination:item_uuid` or any other per-instance PDC
+value. Stamping would stop tokens from different grants/refunds stacking, and
+CoI's dupe scan treats that key as unique per instance (a stack of N, or a split
+stack, would be reported as a dupe). Token rows carry a row-level `mint_id`
+plus `item_origin` (`STAFF_GRANT` for admin gives with `item_minted_by`, `SHOP`
+for refunds) instead. `item_uuid` on a `token.consumed` row appears only if the
+consumed stack already carried one.
+
+Wrapper items produced by a universal-token exchange are stamped with
+`item_uuid`, `item_origin=SHOP` and `item_parent` only when they are
+non-stackable (max stack size 1, amount 1); the row then carries `item_uuid`
+top-level. Stackable wrapper items are left unstamped and the row carries
+`mint_id` instead. No player-visible stacking behaviour changes.
 
 ## Deliberate exclusions
 

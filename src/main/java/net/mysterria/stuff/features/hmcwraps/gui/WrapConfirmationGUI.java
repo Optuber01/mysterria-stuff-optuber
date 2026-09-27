@@ -185,7 +185,12 @@ public class WrapConfirmationGUI {
                 effectiveWrapId, wrap.getWrapName(), itemType, itemAmount, true));
         metadata.put("delivery", "universal_token_exchange");
         metadata.putAll(delivery.toMetadata());
-        if (wrapperUuid != null) metadata.put("item_uuid", wrapperUuid);
+        if (wrapperUuid != null) {
+            metadata.put("item_uuid", wrapperUuid);
+        } else {
+            metadata.put("mint_id", ItemIdentity.newMintId());
+        }
+        metadata.put("item_origin", ItemIdentity.ORIGIN_SHOP);
         if (tokenUuid != null) metadata.put("parent_item_uuid", tokenUuid);
         metadata.putAll(StuffAuditEmitter.location(player));
         StuffAuditEmitter.emit("cosmetic.unlocked", correlationId,
@@ -212,11 +217,13 @@ public class WrapConfirmationGUI {
 
     private void refundToken(Player player, UUID correlationId, String consumedTokenUuid) {
         ItemStack token = manager.createToken(1);
-        String refundUuid = ItemIdentity.stampShop(token, consumedTokenUuid);
+        // Refund tokens stay unstamped so they keep stacking with existing tokens.
+        String mintId = ItemIdentity.newMintId();
         ItemDelivery.Result delivery = ItemDelivery.deliver(player, token);
         Map<String, Object> metadata = new LinkedHashMap<>(StuffAuditEmitter.tokenMetadata("universal", 1, "wrap_exchange_refund"));
         metadata.putAll(delivery.toMetadata());
-        if (refundUuid != null) metadata.put("item_uuid", refundUuid);
+        metadata.put("mint_id", mintId);
+        metadata.put("item_origin", ItemIdentity.ORIGIN_SHOP);
         if (consumedTokenUuid != null) metadata.put("parent_item_uuid", consumedTokenUuid);
         metadata.putAll(StuffAuditEmitter.location(player));
         StuffAuditEmitter.emit("token.granted", correlationId,

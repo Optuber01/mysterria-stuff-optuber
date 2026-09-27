@@ -295,12 +295,14 @@ public class JoinMsgSessionHandler implements Listener {
 
 
         ItemStack token = manager.createToken(1);
-        String tokenUuid = ItemIdentity.stampShop(token, session.getConsumedTokenUuid());
+        // Refund tokens stay unstamped so they keep stacking with existing tokens.
+        String mintId = ItemIdentity.newMintId();
         ItemDelivery.Result delivery = ItemDelivery.deliver(player, token);
         Map<String, Object> metadata = new LinkedHashMap<>(
                 StuffAuditEmitter.tokenMetadata("joinmsg", 1, "joinmsg_session_cancelled"));
         metadata.putAll(delivery.toMetadata());
-        if (tokenUuid != null) metadata.put("item_uuid", tokenUuid);
+        metadata.put("mint_id", mintId);
+        metadata.put("item_origin", ItemIdentity.ORIGIN_SHOP);
         if (session.getConsumedTokenUuid() != null) metadata.put("parent_item_uuid", session.getConsumedTokenUuid());
         metadata.putAll(StuffAuditEmitter.location(player));
 
