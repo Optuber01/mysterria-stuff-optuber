@@ -90,18 +90,32 @@ public final class ItemDelivery {
     }
 
     public static Result deliver(Player player, ItemStack item) {
+        return deliver(player, item, false);
+    }
+
+    /**
+     * Elytra / Last Sprint kit semantics: when the inventory has no empty slot the whole stack is
+     * dropped (it is not merged into matching partial stacks). Overflow from a partial add is
+     * dropped rather than discarded.
+     */
+    public static Result deliverOrDropWhenFull(Player player, ItemStack item) {
+        return deliver(player, item, true);
+    }
+
+    private static Result deliver(Player player, ItemStack item, boolean dropWhenNoEmptySlot) {
         if (item == null || item.getType().isAir()) return Result.empty();
         int requestedAmount = item.getAmount();
         String itemUuid = ItemIdentity.readUuid(item);
         List<String> uuids = itemUuid == null ? List.of() : List.of(itemUuid);
-        Map<Integer, ItemStack> leftovers = player.getInventory().addItem(item);
+        Map<Integer, ItemStack> leftovers = dropWhenNoEmptySlot && player.getInventory().firstEmpty() == -1
+                ? Map.of(0, item)
+                : player.getInventory().addItem(item);
         int droppedAmount = 0;
         int undeliveredAmount = 0;
         for (ItemStack leftover : leftovers.values()) {
             if (leftover == null || leftover.getAmount() <= 0) continue;
             int amount = leftover.getAmount();
-            Item dropped = player.getWorld().dropItemNaturally(player.getLocation(), leftover);
-            if (dropped != null && dropped.isValid() && !dropped.isDead()) {
+            if (dropSpawned(player, leftover)) {
                 droppedAmount += amount;
             } else {
                 undeliveredAmount += amount;
@@ -111,10 +125,17 @@ public final class ItemDelivery {
         return new Result(requestedAmount, deliveredAmount, droppedAmount, undeliveredAmount, uuids);
     }
 
+    /** False when the drop was refused, e.g. a cancelled ItemSpawnEvent. */
+    private static boolean dropSpawned(Player player, ItemStack stack) {
+        Item dropped = player.getWorld().dropItemNaturally(player.getLocation(), stack);
+        return dropped != null && dropped.isValid() && !dropped.isDead();
+    }
+
+    /** Last Sprint kit delivery, one stack at a time with {@link #deliverOrDropWhenFull} semantics. */
     public static Result deliverAll(Player player, List<ItemStack> items) {
         Result total = Result.empty();
         for (ItemStack item : items) {
-            total = total.plus(deliver(player, item));
+            total = total.plus(deliverOrDropWhenFull(player, item));
         }
         return total;
     }

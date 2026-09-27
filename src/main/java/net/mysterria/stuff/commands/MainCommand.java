@@ -998,13 +998,13 @@ public class MainCommand implements CommandExecutor {
                 actorId, target.getUniqueId(), "admin_give", delivery, metadata);
     }
 
-    /** Delivers a staff grant; a thrown delivery records a FAILED row and is rethrown unchanged. */
+    /** Delivers a staff item grant (elytra); a thrown delivery records a FAILED row and is rethrown unchanged. */
     private ItemDelivery.Result deliverStaffGrant(CommandSender sender, Player target, ItemStack item,
                                                   String operation, String businessId, String grantType,
                                                   Map<String, Object> extra) {
         int amount = item.getAmount();
         try {
-            return ItemDelivery.deliver(target, item);
+            return ItemDelivery.deliverOrDropWhenFull(target, item);
         } catch (RuntimeException e) {
             StuffAuditEmitter.emitDeliveryException(operation, StuffAuditEmitter.correlationId(), businessId,
                     StuffAuditEmitter.actorId(sender), target.getUniqueId(), "admin_give",
