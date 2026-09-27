@@ -93,33 +93,53 @@ public class JoinMsgStore {
     // Loading / saving
     // ---------------------------------------------------------------
 
+    /**
+     * Scratch holder for a complete store snapshot. Loads and migrations are built and
+     * validated in one of these first and only swapped into the live maps once they are
+     * known to be complete, so a failed read can never leave the store half-cleared.
+     */
+    private static final class StoreState {
+        final Map<UUID, MessageEntry> byUuid;
+        final Map<String, MessageEntry> pending;
+        String defaultJoin;
+        String defaultQuit;
+        String firstJoin;
+
+        StoreState() {
+            this(new HashMap<>(), new HashMap<>(), null, null, null);
+        }
+
+        StoreState(Map<UUID, MessageEntry> byUuid, Map<String, MessageEntry> pending,
+                   String defaultJoin, String defaultQuit, String firstJoin) {
+            this.byUuid = byUuid;
+            this.pending = pending;
+            this.defaultJoin = defaultJoin;
+            this.defaultQuit = defaultQuit;
+            this.firstJoin = firstJoin;
+        }
+    }
+
     public void load() {
         File file = getStoreFile();
+        StoreState loaded;
         if (!file.exists()) {
-            clearState();
-            loadFailed = false;
-            if (!migrateLegacyFormat()) {
+            File legacyDir = findLegacyDir("join.rs", "quit.rs");
+            if (legacyDir == null) {
+                applyState(new StoreState());
+                loadFailed = false;
                 PrettyLogger.info("No join/quit message store found, starting fresh");
                 return;
             }
+            loaded = migrateLegacyFormat(legacyDir);
         } else {
-            // Parse into a scratch configuration first: loadConfiguration() swallows read and
-            // YAML errors and returns an empty config, which would wipe the live state and let
-            // the next save() overwrite the store (and its .bak) with nothing.
-            YamlConfiguration yaml = new YamlConfiguration();
-            try {
-                yaml.load(file);
-            } catch (IOException | InvalidConfigurationException | RuntimeException e) {
-                loadFailed = true;
-                PrettyLogger.warn("Failed to read join/quit message store " + file.getName()
-                        + ", keeping the current in-memory state and refusing to overwrite the file until it loads: "
-                        + e.getMessage());
-                return;
-            }
-            clearState();
-            readFrom(yaml);
-            loadFailed = false;
+            loaded = readStoreFile(file);
         }
+        if (loaded == null) {
+            return;
+        }
+
+        applyState(loaded);
+        loadFailed = false;
 
         PrettyLogger.info("Loaded " + byUuid.size() + " player join/quit message(s)"
                 + (pending.isEmpty() ? "" : ", " + pending.size() + " pending name match(es)")
@@ -127,18 +147,42 @@ public class JoinMsgStore {
                 + (firstJoinMessage != null ? ", first-join message" : ""));
     }
 
-    private void clearState() {
-        byUuid.clear();
-        pending.clear();
-        defaultJoinMessage = null;
-        defaultQuitMessage = null;
-        firstJoinMessage = null;
+    /**
+     * Parses and validates the store file into a scratch state. Returns null (and blocks
+     * save()) if the file cannot be read or parsed; the live state is left untouched.
+     */
+    private StoreState readStoreFile(File file) {
+        // Parse into a scratch configuration first: loadConfiguration() swallows read and
+        // YAML errors and returns an empty config, which would wipe the live state and let
+        // the next save() overwrite the store (and its .bak) with nothing.
+        try {
+            YamlConfiguration yaml = new YamlConfiguration();
+            yaml.load(file);
+            return readFrom(yaml);
+        } catch (IOException | InvalidConfigurationException | RuntimeException e) {
+            loadFailed = true;
+            PrettyLogger.warn("Failed to read join/quit message store " + file.getName()
+                    + ", keeping the current in-memory state and refusing to overwrite the file until it loads: "
+                    + e.getMessage());
+            return null;
+        }
     }
 
-    private void readFrom(YamlConfiguration yaml) {
-        defaultJoinMessage = yaml.getString("default.join", null);
-        defaultQuitMessage = yaml.getString("default.quit", null);
-        firstJoinMessage = yaml.getString("first-join", null);
+    private void applyState(StoreState state) {
+        byUuid.clear();
+        byUuid.putAll(state.byUuid);
+        pending.clear();
+        pending.putAll(state.pending);
+        defaultJoinMessage = state.defaultJoin;
+        defaultQuitMessage = state.defaultQuit;
+        firstJoinMessage = state.firstJoin;
+    }
+
+    private StoreState readFrom(YamlConfiguration yaml) {
+        StoreState state = new StoreState();
+        state.defaultJoin = yaml.getString("default.join", null);
+        state.defaultQuit = yaml.getString("default.quit", null);
+        state.firstJoin = yaml.getString("first-join", null);
 
         ConfigurationSection playersSection = yaml.getConfigurationSection("players");
         if (playersSection != null) {
@@ -147,7 +191,7 @@ public class JoinMsgStore {
                     UUID uuid = UUID.fromString(key);
                     ConfigurationSection s = playersSection.getConfigurationSection(key);
                     if (s == null) continue;
-                    byUuid.put(uuid, new MessageEntry(uuid, s.getString("name", key), s.getString("join"), s.getString("quit")));
+                    state.byUuid.put(uuid, new MessageEntry(uuid, s.getString("name", key), s.getString("join"), s.getString("quit")));
                 } catch (IllegalArgumentException e) {
                     PrettyLogger.warn("Skipping invalid UUID key in join/quit store: " + key);
                 }
@@ -166,11 +210,12 @@ public class JoinMsgStore {
                 String name = String.valueOf(nameObj);
                 Object joinObj = map.get("join");
                 Object quitObj = map.get("quit");
-                pending.put(sanitizeKey(name), new MessageEntry(null, name,
+                state.pending.put(sanitizeKey(name), new MessageEntry(null, name,
                         joinObj != null ? String.valueOf(joinObj) : null,
                         quitObj != null ? String.valueOf(quitObj) : null));
             }
         }
+        return state;
     }
 
     public boolean save() {
@@ -182,15 +227,18 @@ public class JoinMsgStore {
             }
             return false;
         }
+        return writeState(new StoreState(byUuid, pending, defaultJoinMessage, defaultQuitMessage, firstJoinMessage));
+    }
 
+    private boolean writeState(StoreState state) {
         try {
             YamlConfiguration yaml = new YamlConfiguration();
 
-            if (defaultJoinMessage != null) yaml.set("default.join", defaultJoinMessage);
-            if (defaultQuitMessage != null) yaml.set("default.quit", defaultQuitMessage);
-            if (firstJoinMessage != null) yaml.set("first-join", firstJoinMessage);
+            if (state.defaultJoin != null) yaml.set("default.join", state.defaultJoin);
+            if (state.defaultQuit != null) yaml.set("default.quit", state.defaultQuit);
+            if (state.firstJoin != null) yaml.set("first-join", state.firstJoin);
 
-            for (MessageEntry entry : byUuid.values()) {
+            for (MessageEntry entry : state.byUuid.values()) {
                 String base = "players." + entry.uuid;
                 yaml.set(base + ".name", entry.name);
                 if (entry.join != null) yaml.set(base + ".join", entry.join);
@@ -198,7 +246,7 @@ public class JoinMsgStore {
             }
 
             List<Map<String, Object>> pendingList = new ArrayList<>();
-            for (MessageEntry entry : pending.values()) {
+            for (MessageEntry entry : state.pending.values()) {
                 Map<String, Object> map = new LinkedHashMap<>();
                 map.put("name", entry.name);
                 if (entry.join != null) map.put("join", entry.join);
@@ -207,25 +255,7 @@ public class JoinMsgStore {
             }
             if (!pendingList.isEmpty()) yaml.set("pending", pendingList);
 
-            File file = getStoreFile();
-            file.getParentFile().mkdirs();
-
-            // Write to a temp file and swap it in, keeping a .bak of whatever was last on disk,
-            // so a bug or crash mid-write can never silently wipe previously-saved data.
-            File tmp = new File(file.getParentFile(), file.getName() + ".tmp");
-            yaml.save(tmp);
-
-            if (file.exists()) {
-                File backup = new File(file.getParentFile(), file.getName() + ".bak");
-                Files.copy(file.toPath(), backup.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            }
-
-            try {
-                Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (java.nio.file.AtomicMoveNotSupportedException e) {
-                Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            }
-
+            writeAtomically(yaml);
             return true;
         } catch (IOException | RuntimeException e) {
             try {
@@ -237,15 +267,39 @@ public class JoinMsgStore {
         }
     }
 
+    private void writeAtomically(YamlConfiguration yaml) throws IOException {
+        File file = getStoreFile();
+        file.getParentFile().mkdirs();
+
+        // Write to a temp file and swap it in, keeping a .bak of whatever was last on disk,
+        // so a bug or crash mid-write can never silently wipe previously-saved data.
+        File tmp = new File(file.getParentFile(), file.getName() + ".tmp");
+        yaml.save(tmp);
+
+        if (file.exists()) {
+            File backup = new File(file.getParentFile(), file.getName() + ".bak");
+            Files.copy(file.toPath(), backup.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        }
+
+        try {
+            Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
     // ---------------------------------------------------------------
     // One-time legacy .rs migration
     // ---------------------------------------------------------------
 
-    private boolean migrateLegacyFormat() {
-        File dir = findLegacyDir("join.rs", "quit.rs");
-        if (dir == null) {
-            return false;
-        }
+    /**
+     * Builds the store from the legacy .rs files in {@code dir}. Any read failure aborts the
+     * whole migration: nothing is saved, nothing is renamed, the live state is left as is and
+     * save() is blocked so no partial store can be created before the migration succeeds.
+     *
+     * @return the migrated state, or null if the migration was aborted
+     */
+    private StoreState migrateLegacyFormat(File dir) {
         File joinFile = new File(dir, "join.rs");
         File quitFile = new File(dir, "quit.rs");
 
@@ -259,26 +313,35 @@ public class JoinMsgStore {
         String[] legacyDefaultQuit = new String[1];
         String[] legacyFirstJoin = new String[1];
 
-        if (joinFile.exists()) parseLegacyFile(joinFile, legacyJoin, "join", legacyDefaultJoin, legacyFirstJoin);
-        if (quitFile.exists()) parseLegacyFile(quitFile, legacyQuit, "quit", legacyDefaultQuit, null);
+        try {
+            if (joinFile.exists()) parseLegacyFile(joinFile, legacyJoin, "join", legacyDefaultJoin, legacyFirstJoin);
+            if (quitFile.exists()) parseLegacyFile(quitFile, legacyQuit, "quit", legacyDefaultQuit, null);
+        } catch (IOException | RuntimeException e) {
+            loadFailed = true;
+            PrettyLogger.warn("Aborting legacy join/quit migration: failed to read a legacy file in "
+                    + dir.getPath() + " (" + e.getMessage() + "). Nothing was saved or renamed; "
+                    + "the store stays read-only until the migration succeeds on a later load.");
+            return null;
+        }
 
-        defaultJoinMessage = legacyDefaultJoin[0];
-        defaultQuitMessage = legacyDefaultQuit[0];
-        firstJoinMessage = legacyFirstJoin[0];
+        StoreState state = new StoreState();
+        state.defaultJoin = legacyDefaultJoin[0];
+        state.defaultQuit = legacyDefaultQuit[0];
+        state.firstJoin = legacyFirstJoin[0];
 
         Set<String> names = new HashSet<>();
         names.addAll(legacyJoin.keySet());
         names.addAll(legacyQuit.keySet());
 
         for (String name : names) {
-            pending.put(name.toLowerCase(), new MessageEntry(null, name, legacyJoin.get(name), legacyQuit.get(name)));
+            state.pending.put(name.toLowerCase(), new MessageEntry(null, name, legacyJoin.get(name), legacyQuit.get(name)));
         }
 
-        if (!save()) {
+        if (!writeState(state)) {
             // Keep the .rs sources discoverable so the migration is retried on the next load.
             PrettyLogger.warn("Could not persist migrated join/quit messages; legacy files in "
                     + dir.getPath() + " were left untouched and migration will be retried on the next load.");
-            return true;
+            return state;
         }
 
         backupLegacyFile(joinFile);
@@ -287,7 +350,7 @@ public class JoinMsgStore {
         PrettyLogger.success("Migrated " + names.size() + " legacy join/quit message(s). "
                 + "Each will attach to its player's UUID the next time that player is seen online (name match). "
                 + "Old .rs files were renamed with a .migrated suffix.");
-        return true;
+        return state;
     }
 
     /**
@@ -313,8 +376,8 @@ public class JoinMsgStore {
         String[] unusedDefault = new String[1];
         String[] unusedFirstJoin = new String[1];
 
-        if (joinFile.exists()) parseLegacyFile(joinFile, legacyJoin, "join", unusedDefault, unusedFirstJoin);
-        if (quitFile.exists()) parseLegacyFile(quitFile, legacyQuit, "quit", unusedDefault, null);
+        parseLegacyFileLogged(joinFile, legacyJoin, "join", unusedDefault, unusedFirstJoin);
+        parseLegacyFileLogged(quitFile, legacyQuit, "quit", unusedDefault, null);
 
         Set<String> names = new HashSet<>();
         names.addAll(legacyJoin.keySet());
@@ -357,6 +420,16 @@ public class JoinMsgStore {
         }
     }
 
+    /** Repair is fill-only and safe to rerun, so a failed file is logged and skipped as before. */
+    private void parseLegacyFileLogged(File file, Map<String, String> out, String type, String[] defaultOut, String[] firstJoinOut) {
+        if (!file.exists()) return;
+        try {
+            parseLegacyFile(file, out, type, defaultOut, firstJoinOut);
+        } catch (IOException e) {
+            PrettyLogger.warn("Failed to parse legacy " + type + " messages from " + file.getName() + ": " + e.getMessage());
+        }
+    }
+
     private static final Pattern REQUIRE_SENDER_PATTERN =
             Pattern.compile("require sender script\\s+\"\\{player}\"\\s*==\\s*\"([^\"]+)\"");
 
@@ -375,60 +448,57 @@ public class JoinMsgStore {
      * shorthand groups for the same player are ignored (matches the original engine's
      * Stop_On_First_Match top-to-bottom rule evaluation).
      */
-    private void parseLegacyFile(File file, Map<String, String> out, String type, String[] defaultOut, String[] firstJoinOut) {
+    private void parseLegacyFile(File file, Map<String, String> out, String type, String[] defaultOut, String[] firstJoinOut)
+            throws IOException {
         List<String> suffixes = type.equals("quit")
                 ? List.of("-quit-message", "-leave-message")
                 : List.of("-" + type + "-message");
 
-        try {
-            List<String> lines = Files.readAllLines(file.toPath());
-            String currentGroup = null;
-            String currentRealName = null;
-            boolean isPlayerGroup = false;
-            boolean inMessageBlock = false;
+        List<String> lines = Files.readAllLines(file.toPath());
+        String currentGroup = null;
+        String currentRealName = null;
+        boolean isPlayerGroup = false;
+        boolean inMessageBlock = false;
 
-            for (String raw : lines) {
-                String line = raw.trim();
-                if (line.startsWith("group ")) {
-                    String groupName = line.substring("group ".length());
-                    currentRealName = null;
-                    isPlayerGroup = false;
-                    if (groupName.equals("default")) {
-                        currentGroup = "default";
-                    } else if (firstJoinOut != null && groupName.equals("firstjoinmessage")) {
-                        currentGroup = "firstjoinmessage";
+        for (String raw : lines) {
+            String line = raw.trim();
+            if (line.startsWith("group ")) {
+                String groupName = line.substring("group ".length());
+                currentRealName = null;
+                isPlayerGroup = false;
+                if (groupName.equals("default")) {
+                    currentGroup = "default";
+                } else if (firstJoinOut != null && groupName.equals("firstjoinmessage")) {
+                    currentGroup = "firstjoinmessage";
+                } else {
+                    String derived = stripSuffix(groupName, suffixes);
+                    if (derived != null) {
+                        currentGroup = "player";
+                        currentRealName = derived;
+                        isPlayerGroup = true;
                     } else {
-                        String derived = stripSuffix(groupName, suffixes);
-                        if (derived != null) {
-                            currentGroup = "player";
-                            currentRealName = derived;
-                            isPlayerGroup = true;
-                        } else {
-                            currentGroup = null;
-                        }
+                        currentGroup = null;
                     }
-                    inMessageBlock = false;
-                } else if (isPlayerGroup && line.startsWith("require sender script")) {
-                    Matcher m = REQUIRE_SENDER_PATTERN.matcher(line);
-                    if (m.find()) {
-                        currentRealName = m.group(1);
-                    }
-                } else if (line.equals("message:") && currentGroup != null) {
-                    inMessageBlock = true;
-                } else if (inMessageBlock && line.startsWith("- ") && currentGroup != null) {
-                    String message = line.substring(2);
-                    if (currentGroup.equals("default")) {
-                        defaultOut[0] = message;
-                    } else if (firstJoinOut != null && currentGroup.equals("firstjoinmessage")) {
-                        firstJoinOut[0] = message;
-                    } else if (isPlayerGroup && currentRealName != null) {
-                        out.putIfAbsent(currentRealName, message);
-                    }
-                    inMessageBlock = false;
                 }
+                inMessageBlock = false;
+            } else if (isPlayerGroup && line.startsWith("require sender script")) {
+                Matcher m = REQUIRE_SENDER_PATTERN.matcher(line);
+                if (m.find()) {
+                    currentRealName = m.group(1);
+                }
+            } else if (line.equals("message:") && currentGroup != null) {
+                inMessageBlock = true;
+            } else if (inMessageBlock && line.startsWith("- ") && currentGroup != null) {
+                String message = line.substring(2);
+                if (currentGroup.equals("default")) {
+                    defaultOut[0] = message;
+                } else if (firstJoinOut != null && currentGroup.equals("firstjoinmessage")) {
+                    firstJoinOut[0] = message;
+                } else if (isPlayerGroup && currentRealName != null) {
+                    out.putIfAbsent(currentRealName, message);
+                }
+                inMessageBlock = false;
             }
-        } catch (IOException e) {
-            PrettyLogger.warn("Failed to parse legacy " + type + " messages from " + file.getName() + ": " + e.getMessage());
         }
     }
 
