@@ -42,6 +42,10 @@ dependencies {
     implementation 'dev.ua.ikeepcalm.mysterria:audit-client:1.0.0'
 }
 
+jar {
+    enabled = false
+}
+
 shadowJar {
     archiveClassifier.set('')
     relocate 'dev.ua.ikeepcalm.mysterria.audit', 'net.mysterria.stuff.libs.audit'
