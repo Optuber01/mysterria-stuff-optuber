@@ -117,7 +117,24 @@ public final class StuffAuditEmitter {
                 targetId, reason, values);
     }
 
+    /** Records a low-risk observation that is neither an attempt nor a state change. */
+    public static void emitObservedLow(String operation,
+                                       UUID correlationId, String businessId,
+                                       UUID actorId, UUID subjectId, String reason,
+                                       Map<String, ?> values) {
+        emit(AuditOutcome.OBSERVED, AuditRisk.LOW, operation, correlationId, businessId, actorId,
+                subjectId, null, reason, values);
+    }
+
     private static void emit(AuditOutcome outcome, String operation,
+                             UUID correlationId, String businessId,
+                             UUID actorId, UUID subjectId, UUID targetId, String reason,
+                             Map<String, ?> values) {
+        emit(outcome, AuditRisk.NORMAL, operation, correlationId, businessId, actorId, subjectId,
+                targetId, reason, values);
+    }
+
+    private static void emit(AuditOutcome outcome, AuditRisk risk, String operation,
                              UUID correlationId, String businessId,
                              UUID actorId, UUID subjectId, UUID targetId, String reason,
                              Map<String, ?> values) {
@@ -133,7 +150,7 @@ public final class StuffAuditEmitter {
             Map<String, Object> metadata = new LinkedHashMap<>();
             if (actorId == null) metadata.put("actor_name", "console");
             if (values != null) metadata.putAll(values);
-            current.emit(NAMESPACE + operation, outcome, AuditRisk.NORMAL,
+            current.emit(NAMESPACE + operation, outcome, risk,
                     AuditPrivacy.STAFF_RESTRICTED, correlationId, businessId, actorId,
                     subjectId, targetId, reason, boundedMetadata(metadata));
         } catch (RuntimeException | LinkageError failure) {
@@ -167,9 +184,14 @@ public final class StuffAuditEmitter {
     /** Lowercase hex SHA-256 of the given text, for fingerprinting content without storing it. */
     public static String sha256(String text) {
         if (text == null) return null;
+        return sha256(text.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Lowercase hex SHA-256 of the given bytes. */
+    public static String sha256(byte[] bytes) {
+        if (bytes == null) return null;
         try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(text.getBytes(StandardCharsets.UTF_8));
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(bytes);
             return HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException impossible) {
             return null;

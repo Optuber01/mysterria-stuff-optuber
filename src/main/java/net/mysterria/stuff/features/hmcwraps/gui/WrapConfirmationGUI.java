@@ -30,10 +30,10 @@ import java.util.UUID;
 
 public class WrapConfirmationGUI {
 
-    private static final long PREVIEW_FAILURE_WINDOW_MS = 60_000L;
-    private static final int PREVIEW_FAILURE_PRUNE_SIZE = 256;
-    /** player|wrap -> last preview FAILED row time; GUI callbacks run on the main thread. */
-    private static final Map<String, Long> PREVIEW_FAILURES = new HashMap<>();
+    private static final long PREVIEW_UNAVAILABLE_WINDOW_MS = 10 * 60_000L;
+    private static final int PREVIEW_UNAVAILABLE_PRUNE_SIZE = 256;
+    /** player|wrap -> last preview_unavailable row time; GUI callbacks run on the main thread. */
+    private static final Map<String, Long> PREVIEW_UNAVAILABLE = new HashMap<>();
 
     private final UniversalTokenManager manager;
     private final MiniMessage miniMessage;
@@ -59,7 +59,7 @@ public class WrapConfirmationGUI {
                 player.sendMessage(Component.text("Error: This wrap has no physical item configured.", NamedTextColor.RED));
                 player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
                 PrettyLogger.warn("Wrap '" + wrap.getWrapName() + "' has null physical item");
-                emitPreviewFailed(player, wrap, "wrap_physical_missing");
+                emitPreviewUnavailable(player, wrap, "wrap_physical_missing");
                 return;
             }
             wrapItem = wrap.getPhysical().toItem(hmcWraps, player);
@@ -67,7 +67,7 @@ public class WrapConfirmationGUI {
             player.sendMessage(Component.text("Error: Failed to load wrap item.", NamedTextColor.RED));
             player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
             PrettyLogger.warn("Failed to get physical item for wrap '" + wrap.getWrapName() + "': " + e.getMessage());
-            emitPreviewFailed(player, wrap, "wrapper_creation_failed");
+            emitPreviewUnavailable(player, wrap, "wrapper_creation_failed");
             return;
         }
 
@@ -132,6 +132,8 @@ public class WrapConfirmationGUI {
 
         UUID correlationId = StuffAuditEmitter.correlationId();
         String tokenUuid = ItemIdentity.readUuid(heldItem);
+        // Snapshot before consumption: consumeToken decrements the stack in place.
+        Map<String, Object> tokenIdentity = ItemIdentity.consumedTokenIdentity(heldItem, manager.tokenMarker(heldItem));
 
         if (!manager.consumeToken(heldItem, 1)) {
             player.sendMessage(manager.getMessage("no-token-in-hand"));
@@ -140,10 +142,7 @@ public class WrapConfirmationGUI {
 
         Map<String, Object> consumed = new LinkedHashMap<>(
                 StuffAuditEmitter.tokenMetadata("universal", 1, "wrap_exchange"));
-        if (tokenUuid != null) {
-            consumed.put("item_uuid", tokenUuid);
-            consumed.put("item_uuid_scope", ItemIdentity.SCOPE_INSTANCE);
-        }
+        consumed.putAll(tokenIdentity);
         consumed.putAll(StuffAuditEmitter.location(player));
         StuffAuditEmitter.emit("token.consumed", correlationId,
                 StuffAuditEmitter.tokenBusinessId("universal"), player.getUniqueId(),
@@ -241,34 +240,44 @@ public class WrapConfirmationGUI {
     }
 
     private void abortExchange(Player player, Wrap wrap, UUID correlationId, String tokenUuid, String reason) {
-        emitUnlockFailed(player, wrap, correlationId, reason, "exchange");
+        emitUnlockFailed(player, wrap, correlationId, reason);
         refundToken(player, correlationId, tokenUuid);
         player.sendMessage(Component.text("Your token has been refunded.", NamedTextColor.GREEN));
     }
 
     /**
-     * A wrap preview that cannot load is not an exchange attempt, but it is still worth a bounded
-     * trace: at most one FAILED row per player per wrap per {@link #PREVIEW_FAILURE_WINDOW_MS}.
+     * A wrap preview that cannot load is not an exchange attempt, so it never produces a
+     * cosmetic.unlocked FAILED row. It is traced as a low-risk observation instead: at most one
+     * row per player per wrap per {@link #PREVIEW_UNAVAILABLE_WINDOW_MS}.
      */
-    private void emitPreviewFailed(Player player, Wrap wrap, String reason) {
+    private void emitPreviewUnavailable(Player player, Wrap wrap, String reason) {
         long now = System.currentTimeMillis();
         String key = player.getUniqueId() + "|" + wrap.getWrapName();
-        if (PREVIEW_FAILURES.size() > PREVIEW_FAILURE_PRUNE_SIZE) {
-            PREVIEW_FAILURES.values().removeIf(last -> now - last >= PREVIEW_FAILURE_WINDOW_MS);
+        if (PREVIEW_UNAVAILABLE.size() > PREVIEW_UNAVAILABLE_PRUNE_SIZE) {
+            PREVIEW_UNAVAILABLE.values().removeIf(last -> now - last >= PREVIEW_UNAVAILABLE_WINDOW_MS);
         }
-        Long last = PREVIEW_FAILURES.get(key);
-        if (last != null && now - last < PREVIEW_FAILURE_WINDOW_MS) return;
-        PREVIEW_FAILURES.put(key, now);
-        emitUnlockFailed(player, wrap, StuffAuditEmitter.correlationId(), reason, "preview");
+        Long last = PREVIEW_UNAVAILABLE.get(key);
+        if (last != null && now - last < PREVIEW_UNAVAILABLE_WINDOW_MS) return;
+        PREVIEW_UNAVAILABLE.put(key, now);
+
+        String wrapId = wrap.getUuid();
+        Map<String, Object> metadata = new LinkedHashMap<>(StuffAuditEmitter.wrapMetadata(
+                wrapId, wrap.getWrapName(), null, 0, true));
+        metadata.put("unavailable_reason", reason);
+        metadata.putAll(StuffAuditEmitter.location(player));
+        StuffAuditEmitter.emitObservedLow("cosmetic.preview_unavailable", StuffAuditEmitter.correlationId(),
+                StuffAuditEmitter.wrapBusinessId(wrapId, wrap.getWrapName()), player.getUniqueId(),
+                player.getUniqueId(), reason, metadata);
     }
 
-    private void emitUnlockFailed(Player player, Wrap wrap, UUID correlationId, String reason, String stage) {
+    /** Only called once an exchange was actually attempted (the token has been consumed). */
+    private void emitUnlockFailed(Player player, Wrap wrap, UUID correlationId, String reason) {
         String wrapId = wrap.getUuid();
         Map<String, Object> metadata = new LinkedHashMap<>(StuffAuditEmitter.wrapMetadata(
                 wrapId, wrap.getWrapName(), null, 0, true));
         metadata.put("delivery", "universal_token_exchange");
         metadata.put("failure", reason);
-        metadata.put("failure_stage", stage);
+        metadata.put("failure_stage", "exchange");
         metadata.putAll(StuffAuditEmitter.location(player));
         StuffAuditEmitter.emitFailed("cosmetic.unlocked", correlationId,
                 StuffAuditEmitter.wrapBusinessId(wrapId, wrap.getWrapName()), player.getUniqueId(),
