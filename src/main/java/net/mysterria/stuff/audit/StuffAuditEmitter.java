@@ -17,6 +17,8 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /** Best-effort bridge to the optional shared Mysterria audit ledger. */
 public final class StuffAuditEmitter {
@@ -24,20 +26,43 @@ public final class StuffAuditEmitter {
     private static final int MAX_METADATA_ENTRIES = 32;
     private static final int MAX_TEXT = 256;
     private static volatile AuditProducer producer;
+    private static volatile Logger logger;
 
     private StuffAuditEmitter() {
     }
 
+    /** Never throws: on failure the emitter stays disabled and every emit is a no-op. */
     public static void initialize(JavaPlugin plugin) {
-        producer = AuditProducer.create(plugin.getDataFolder().toPath().toAbsolutePath().getParent()
-                        .resolve("mysterria-audit-spool"),
-                "mysterria-stuff", plugin.getPluginMeta().getVersion());
+        logger = plugin.getLogger();
+        try {
+            producer = AuditProducer.create(plugin.getDataFolder().toPath().toAbsolutePath().getParent()
+                            .resolve("mysterria-audit-spool"),
+                    "mysterria-stuff", plugin.getPluginMeta().getVersion());
+        } catch (RuntimeException | LinkageError failure) {
+            producer = null;
+            warn("Audit producer failed to initialize; audit rows are disabled", failure);
+        }
     }
 
+    /** Never throws, so plugin shutdown cleanup always continues. */
     public static void close() {
         AuditProducer current = producer;
         producer = null;
-        if (current != null) current.close();
+        if (current == null) return;
+        try {
+            current.close();
+        } catch (RuntimeException | LinkageError failure) {
+            warn("Audit producer failed to close cleanly", failure);
+        }
+    }
+
+    private static void warn(String message, Throwable failure) {
+        try {
+            Logger current = logger;
+            if (current != null) current.log(Level.WARNING, message, failure);
+        } catch (RuntimeException ignored) {
+            // Logging must never break gameplay.
+        }
     }
 
     /**
@@ -81,9 +106,14 @@ public final class StuffAuditEmitter {
             current.emit(NAMESPACE + operation, outcome, AuditRisk.NORMAL,
                     AuditPrivacy.STAFF_RESTRICTED, correlationId, businessId, actorId,
                     subjectId, targetId, reason, boundedMetadata(metadata));
-        } catch (Throwable failure) {
-            AuditProducer current = producer;
-            if (current != null) current.recordFailure();
+        } catch (RuntimeException | LinkageError failure) {
+            warn("Audit emit failed for " + operation, failure);
+            try {
+                AuditProducer current = producer;
+                if (current != null) current.recordFailure();
+            } catch (RuntimeException | LinkageError recordFailure) {
+                warn("Audit failure counter could not be updated", recordFailure);
+            }
         }
     }
 

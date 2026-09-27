@@ -123,7 +123,7 @@ public final class MysterriaStuff extends JavaPlugin {
 
         if (configManager.isBoosterPatriarchEnabled()) {
             loadCoiApi();
-            BoosterPatriarchListener boosterPatriarchListener = new BoosterPatriarchListener(this);
+            boosterPatriarchListener = new BoosterPatriarchListener(this);
             getServer().getPluginManager().registerEvents(boosterPatriarchListener, this);
             PrettyLogger.feature("CoI Booster Patriarch System");
         }
@@ -250,20 +250,22 @@ public final class MysterriaStuff extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        StuffAuditEmitter.close();
+        try {
+            closeChatAliasIntegration();
 
-        closeChatAliasIntegration();
+            if (coiZoneManager != null) {
+                coiZoneManager.shutdown();
+            }
 
-        if (coiZoneManager != null) {
-            coiZoneManager.shutdown();
+            if (boosterPatriarchListener != null) {
+                boosterPatriarchListener.shutdown();
+            }
+
+            PrettyLogger.warn("MysterriaStuff is shutting down...");
+            PrettyLogger.info("Thanks for using MysterriaStuff!");
+        } finally {
+            StuffAuditEmitter.close();
         }
-
-        if (boosterPatriarchListener != null) {
-            boosterPatriarchListener.shutdown();
-        }
-
-        PrettyLogger.warn("MysterriaStuff is shutting down...");
-        PrettyLogger.info("Thanks for using MysterriaStuff!");
     }
 
     public RecipeManager getRecipeManager() {
