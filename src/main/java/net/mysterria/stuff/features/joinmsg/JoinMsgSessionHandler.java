@@ -19,10 +19,10 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
 
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 
 public class JoinMsgSessionHandler implements Listener {
@@ -36,7 +36,8 @@ public class JoinMsgSessionHandler implements Listener {
         this.plugin = plugin;
         this.manager = JoinMsgTokenManager.getInstance();
         this.store = store;
-        this.activeSessions = new HashMap<>();
+        // Read from the async chat thread, mutated on the main thread.
+        this.activeSessions = new ConcurrentHashMap<>();
     }
 
 
@@ -73,20 +74,22 @@ public class JoinMsgSessionHandler implements Listener {
         UUID playerId = player.getUniqueId();
 
 
-        if (!activeSessions.containsKey(playerId)) {
+        // Single lookup: a containsKey/get pair could straddle a main-thread removal and yield null.
+        PlayerSession session = activeSessions.get(playerId);
+        if (session == null) {
             return;
         }
 
 
         event.setCancelled(true);
 
-        PlayerSession session = activeSessions.get(playerId);
-
 
         String message = PlainTextComponentSerializer.plainText().serialize(event.message());
 
 
         plugin.getServer().getScheduler().runTask(plugin, () -> {
+            // Revalidate on the main thread: the session may have been cancelled or replaced meanwhile.
+            if (activeSessions.get(playerId) != session) return;
             processSessionMessage(player, session, message);
         });
     }
