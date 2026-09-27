@@ -53,6 +53,7 @@ public class WrapConfirmationGUI {
                 player.sendMessage(Component.text("Error: This wrap has no physical item configured.", NamedTextColor.RED));
                 player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
                 PrettyLogger.warn("Wrap '" + wrap.getWrapName() + "' has null physical item");
+                emitUnlockFailed(player, wrap, StuffAuditEmitter.correlationId(), "wrap_physical_missing", "preview");
                 return;
             }
             wrapItem = wrap.getPhysical().toItem(hmcWraps, player);
@@ -60,6 +61,7 @@ public class WrapConfirmationGUI {
             player.sendMessage(Component.text("Error: Failed to load wrap item.", NamedTextColor.RED));
             player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
             PrettyLogger.warn("Failed to get physical item for wrap '" + wrap.getWrapName() + "': " + e.getMessage());
+            emitUnlockFailed(player, wrap, StuffAuditEmitter.correlationId(), "wrapper_creation_failed", "preview");
             return;
         }
 
@@ -146,7 +148,7 @@ public class WrapConfirmationGUI {
                 player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
                 PrettyLogger.warn("Wrap '" + wrap.getWrapName() + "' has null physical item during exchange");
 
-                emitUnlockFailed(player, wrap, correlationId, "wrap_physical_missing");
+                emitUnlockFailed(player, wrap, correlationId, "wrap_physical_missing", "exchange");
                 refundToken(player, correlationId, tokenUuid);
                 player.sendMessage(Component.text("Your token has been refunded.", NamedTextColor.GREEN));
                 return;
@@ -160,7 +162,7 @@ public class WrapConfirmationGUI {
             player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
             PrettyLogger.warn("Failed to get physical item for wrap '" + wrap.getWrapName() + "' during exchange: " + e.getMessage());
 
-            emitUnlockFailed(player, wrap, correlationId, "wrapper_creation_failed");
+            emitUnlockFailed(player, wrap, correlationId, "wrapper_creation_failed", "exchange");
             refundToken(player, correlationId, tokenUuid);
             player.sendMessage(Component.text("Your token has been refunded.", NamedTextColor.GREEN));
             return;
@@ -203,12 +205,13 @@ public class WrapConfirmationGUI {
         PrettyLogger.debug(player.getName() + " exchanged a token for wrap: " + wrapName);
     }
 
-    private void emitUnlockFailed(Player player, Wrap wrap, UUID correlationId, String reason) {
+    private void emitUnlockFailed(Player player, Wrap wrap, UUID correlationId, String reason, String stage) {
         String wrapId = wrap.getUuid();
         Map<String, Object> metadata = new LinkedHashMap<>(StuffAuditEmitter.wrapMetadata(
                 wrapId, wrap.getWrapName(), null, 0, true));
         metadata.put("delivery", "universal_token_exchange");
         metadata.put("failure", reason);
+        metadata.put("failure_stage", stage);
         metadata.putAll(StuffAuditEmitter.location(player));
         StuffAuditEmitter.emitFailed("cosmetic.unlocked", correlationId,
                 StuffAuditEmitter.wrapBusinessId(wrapId, wrap.getWrapName()), player.getUniqueId(),
