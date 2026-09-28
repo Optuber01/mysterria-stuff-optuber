@@ -126,6 +126,18 @@ public final class StuffAuditEmitter {
                 subjectId, null, reason, values);
     }
 
+    /**
+     * Records an observation with an explicit risk and privacy class. Safe to call from any
+     * thread: it only reads the given plain values and enqueues on the producer's bounded queue.
+     */
+    public static void emitObserved(AuditRisk risk, AuditPrivacy privacy, String operation,
+                                    UUID correlationId, String businessId,
+                                    UUID actorId, UUID subjectId, String reason,
+                                    Map<String, ?> values) {
+        emit(AuditOutcome.OBSERVED, risk, privacy, operation, correlationId, businessId, actorId,
+                subjectId, null, reason, values);
+    }
+
     private static void emit(AuditOutcome outcome, String operation,
                              UUID correlationId, String businessId,
                              UUID actorId, UUID subjectId, UUID targetId, String reason,
@@ -136,6 +148,14 @@ public final class StuffAuditEmitter {
 
     private static void emit(AuditOutcome outcome, AuditRisk risk, String operation,
                              UUID correlationId, String businessId,
+                             UUID actorId, UUID subjectId, UUID targetId, String reason,
+                             Map<String, ?> values) {
+        emit(outcome, risk, AuditPrivacy.STAFF_RESTRICTED, operation, correlationId, businessId,
+                actorId, subjectId, targetId, reason, values);
+    }
+
+    private static void emit(AuditOutcome outcome, AuditRisk risk, AuditPrivacy privacy,
+                             String operation, UUID correlationId, String businessId,
                              UUID actorId, UUID subjectId, UUID targetId, String reason,
                              Map<String, ?> values) {
         if (operation == null || operation.isBlank() || correlationId == null
@@ -151,7 +171,7 @@ public final class StuffAuditEmitter {
             if (actorId == null) metadata.put("actor_name", "console");
             if (values != null) metadata.putAll(values);
             current.emit(NAMESPACE + operation, outcome, risk,
-                    AuditPrivacy.STAFF_RESTRICTED, correlationId, businessId, actorId,
+                    privacy, correlationId, businessId, actorId,
                     subjectId, targetId, reason, boundedMetadata(metadata));
         } catch (RuntimeException | LinkageError failure) {
             warn("Audit emit failed for " + operation, failure);
@@ -175,6 +195,24 @@ public final class StuffAuditEmitter {
         if (player == null) return values;
         Location location = player.getLocation();
         if (location.getWorld() != null) values.put("world", location.getWorld().getName());
+        values.put("x", location.getBlockX());
+        values.put("y", location.getBlockY());
+        values.put("z", location.getBlockZ());
+        return values;
+    }
+
+    /**
+     * Position metadata (world, x, y, z) for a location; empty when absent or when its world
+     * has been unloaded (a dungeon instance world can be gone by the time an end event fires).
+     */
+    public static Map<String, Object> location(Location location) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        if (location == null) return values;
+        try {
+            if (location.getWorld() != null) values.put("world", location.getWorld().getName());
+        } catch (IllegalArgumentException unloadedWorld) {
+            return values;
+        }
         values.put("x", location.getBlockX());
         values.put("y", location.getBlockY());
         values.put("z", location.getBlockZ());

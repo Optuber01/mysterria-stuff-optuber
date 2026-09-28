@@ -85,6 +85,61 @@ emitted here. HMCWraps owns the durable cosmetic ownership model and does not
 expose an ownership-mutation API in its integration contract; the HMCWraps
 plugin's own event/owner records are the authoritative source for those changes.
 
+## MythicDungeons parties and dungeons
+
+`features/dungeons/MythicDungeonsAuditModule` binds only while the MythicDungeons
+plugin is enabled. MysterriaStuff keeps `loadbefore: MythicDungeons` (the Dungeon
+World Enforcer must create the void world first), so MythicDungeons is not in
+`softdepend` (that would form a load-order cycle); the module instead binds on
+MythicDungeons' `PluginEnableEvent` (or in `onEnable` if it is already enabled) and
+unbinds on its `PluginDisableEvent`. There is no compile dependency: event classes
+are loaded by name through MythicDungeons' class loader, registered at `MONITOR`
+with `ignoreCancelled=true`, and every value is read through cached reflective
+getter lookups (bounded, misses cached too). A missing event class or getter logs
+one WARN and disables that row only; any other failure logs one WARN and disables
+the module. Nothing is modified or cancelled; there is no player- or staff-visible
+output.
+
+All rows: outcome `OBSERVED`, privacy `INTERNAL` (party chat: `CHAT_CONTENT`),
+risk `LOW` (loot: `NORMAL`), `source_plugin=MythicDungeons`.
+
+| Event | Actor / subject | Correlation | Business ID | Metadata |
+| --- | --- | --- | --- | --- |
+| `mysterria-stuff.party.created` | leader / - | party id | `party:<party id>` | `party_id`, `party_id_source`, `members`, `member_count`, leader `world/x/y/z` |
+| `mysterria-stuff.party.joined` | joining player / leader | party id | `party:<party id>` | `members` (includes the joiner), `member_count`, joiner `world/x/y/z` |
+| `mysterria-stuff.party.left` | leaving player / - | party id | `party:<party id>` | `remaining_members`, `remaining_count`, leaver `world/x/y/z` |
+| `mysterria-stuff.party.kicked` | kicker (unset when not exposed) / kicked player | party id | `party:<party id>` | `kicker_exposed`, `remaining_members`, `remaining_count`, `world/x/y/z` + `location_source` (`actor` or `subject`) |
+| `mysterria-stuff.party.chat` | unset / - | party id | `party:<party id>` | `message`, `message_length`, `recipient_count`, `sender_exposed=false`, `actor_name=unknown` |
+| `mysterria-stuff.dungeon.started` | party leader, else first participant | instance UUID | `party:<party id>`, else `dungeon_instance:<instance UUID>` | `instance_id`, `party_id`, `dungeon`, `dungeon_display_name`, `instance_name`, `participants`, `participant_count`, `world/x/y/z` + `location_source` (`instance_start` or `participant`) |
+| `mysterria-stuff.dungeon.ended` | unset (`actor_name=system`) | instance UUID | as above | dungeon fields, `participants`, `participant_count`, `result` (`completed`, `not_completed`, `unknown`), `status`, `time_elapsed` (MythicDungeons counter), `duration_ms` (when the start was observed), participant `world/x/y/z` |
+| `mysterria-stuff.dungeon.player_left` | player | instance UUID | as above | dungeon fields, `edit_mode`, `reason_exposed=false`, player `world/x/y/z` |
+| `mysterria-stuff.dungeon.loot_generated` | player | instance UUID | as above | dungeon fields, `loot_table`, `material`, `amount`, `item_uuid` + `item_uuid_scope=instance` when the stack carries `circleofimagination:item_uuid`, player `world/x/y/z` (`location_source=player`) |
+
+**Party id.** MythicDungeons 2.1.0 parties expose no id. If a party object ever
+exposes a UUID getter (`getUuid`, `getUniqueId`, `getId`, `getPartyId`) it is used
+(`party_id_source=exposed`). Otherwise the id is
+`UUID.nameUUIDFromBytes("mythicdungeons-party:<leader uuid>:<millis>")`, where
+millis is the create-event time (`leader_created`) or, for a party first seen
+through another event, that event's time (`leader_first_seen`). A party first
+seen by the async chat event, whose leader cannot be read off the main thread,
+gets `anonymous_first_seen`. The id is then fixed for that party object (tracked
+by identity) so later rows join. Dungeon rows use the instance UUID as correlation
+and `party:<party id>` as business id, so party and dungeon rows join on business id.
+
+**Limits of the MythicDungeons API (2.1.0).** The party chat event does not carry
+the sender, so `party.chat` has no actor; `recipient_count` is the party size last
+observed on the main thread (key omitted when unknown) and
+excludes chat spies. Chat is async: the row reads only the event's message and
+party reference, no Bukkit API. `PlayerLeaveDungeonEvent` exposes no reason.
+`DungeonEndEvent` does not distinguish failed from abandoned, so `result` is
+`completed` only when the instance reports the dungeon finished. The loot event
+fires once per generated stack and exposes no chest location, so each row names
+one item and uses the player's position. `party.kicked` fires before the removal
+is applied; the matching `party.left` follows. Member/participant lists hold at
+most 6 UUIDs (`<key>_truncated=true` when longer; the count is exact). Tracking
+maps (parties, running instances, reflective lookups) hold at most 512 entries
+each and evict the oldest.
+
 ## Overlap policy
 
 Routine administrative grant success messages use PrettyLogger.debug; token/cosmetic/message mutation events remain the staff audit view. Player-facing confirmations and actionable errors remain.
