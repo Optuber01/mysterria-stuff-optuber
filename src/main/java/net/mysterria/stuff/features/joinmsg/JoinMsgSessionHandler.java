@@ -255,6 +255,14 @@ public class JoinMsgSessionHandler implements Listener {
             case WRITE_ERROR -> player.sendMessage(manager.getMessage("write-error"));
         }
         emitMessageSet(player, session, result);
+        if (result != JoinMsgStore.SetResult.OK) {
+            // The token was consumed when the session started: keep the session so the player can
+            // retry the confirmation or cancel for a refund instead of losing the token.
+            activeSessions.putIfAbsent(playerId, session);
+            player.sendMessage(Component.empty());
+            sendCancelButton(player);
+            sendRestartButton(player);
+        }
     }
 
     private void emitMessageSet(Player player, PlayerSession session, JoinMsgStore.SetResult result) {
@@ -320,7 +328,12 @@ public class JoinMsgSessionHandler implements Listener {
 
 
         player.sendMessage(manager.getMessage("session-cancelled"));
-        player.sendMessage(manager.getMessage("token-refunded"));
+        if (delivery.complete()) {
+            player.sendMessage(manager.getMessage("token-refunded"));
+        } else {
+            player.sendMessage(Component.text("Your token refund could not be delivered. Please contact staff.",
+                    NamedTextColor.RED));
+        }
     }
 
 

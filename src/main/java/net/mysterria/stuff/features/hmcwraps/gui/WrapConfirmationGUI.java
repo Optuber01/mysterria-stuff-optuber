@@ -208,6 +208,19 @@ public class WrapConfirmationGUI {
         StuffAuditEmitter.emitDelivery("cosmetic.unlocked", correlationId, businessId, player.getUniqueId(),
                 player.getUniqueId(), "universal_token_exchange", delivery, metadata);
 
+        if (!delivery.complete()) {
+            // Another plugin blocked the wrapper from entering the world; the token is already consumed.
+            player.sendMessage(Component.text("Error: The wrap item could not be delivered.", NamedTextColor.RED));
+            player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
+            if (delivery.deliveredAmount() + delivery.droppedAmount() == 0) {
+                sendRefundOutcome(player, refundToken(player, correlationId, tokenUuid));
+            }
+            PrettyLogger.warn("Wrapper for wrap '" + wrap.getWrapName() + "' was not fully delivered to "
+                    + player.getName() + " (" + delivery.undeliveredAmount() + " of "
+                    + delivery.requestedAmount() + " undelivered)");
+            return;
+        }
+
         String wrapName = wrap.getName();
         player.sendMessage(manager.getMessage("wrap-exchanged", "wrap", AdventureUtil.convertMiniMessageToLegacy(wrapName)));
 
@@ -241,8 +254,17 @@ public class WrapConfirmationGUI {
 
     private void abortExchange(Player player, Wrap wrap, UUID correlationId, String tokenUuid, String reason) {
         emitUnlockFailed(player, wrap, correlationId, reason);
-        refundToken(player, correlationId, tokenUuid);
-        player.sendMessage(Component.text("Your token has been refunded.", NamedTextColor.GREEN));
+        sendRefundOutcome(player, refundToken(player, correlationId, tokenUuid));
+    }
+
+    private void sendRefundOutcome(Player player, ItemDelivery.Result refund) {
+        if (refund.complete()) {
+            player.sendMessage(Component.text("Your token has been refunded.", NamedTextColor.GREEN));
+        } else {
+            player.sendMessage(Component.text("Your token refund could not be delivered. Please contact staff.",
+                    NamedTextColor.RED));
+            PrettyLogger.warn("Universal Token refund could not be delivered to " + player.getName());
+        }
     }
 
     /**
@@ -284,7 +306,7 @@ public class WrapConfirmationGUI {
                 player.getUniqueId(), null, reason, metadata);
     }
 
-    private void refundToken(Player player, UUID correlationId, String consumedTokenUuid) {
+    private ItemDelivery.Result refundToken(Player player, UUID correlationId, String consumedTokenUuid) {
         ItemStack token = manager.createToken(1);
         // Refund tokens stay unstamped so they keep stacking with existing tokens; the lot uuid is row-only.
         Map<String, Object> lot = ItemIdentity.lotMetadata(ItemIdentity.ORIGIN_SHOP, null, 1);
@@ -303,6 +325,7 @@ public class WrapConfirmationGUI {
         }
         StuffAuditEmitter.emitDelivery("token.granted", correlationId, businessId, player.getUniqueId(),
                 player.getUniqueId(), "wrap_exchange_refund", delivery, metadata);
+        return delivery;
     }
 
     private String resolveWrapId(Wrap wrap, String loaderWrapId) {
