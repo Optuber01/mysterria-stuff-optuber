@@ -1149,9 +1149,19 @@ public class MainCommand implements CommandExecutor {
                                     Map.of("stack_count", kit.size())), e);
                     throw e;
                 }
-                boolean flagSaved = lastSprint.markGiftReceived(target.getUniqueId());
+                // Partially delivered kits are still flagged so the first-join grant cannot duplicate them.
+                boolean anyDelivered = kitDelivery.deliveredAmount() + kitDelivery.droppedAmount() > 0;
+                boolean flagSaved = anyDelivered && lastSprint.markGiftReceived(target.getUniqueId());
                 emitStaffItemGrant(sender, target, "kit.granted", "kit:last_sprint", "last_sprint_kit",
                         kitDelivery, Map.of("stack_count", kit.size(), "gift_flag_saved", flagSaved));
+                if (anyDelivered && !flagSaved) {
+                    sender.sendMessage(Component.text("Warning: the Last Sprint gift flag for " + target.getName()
+                                    + " could not be saved; it may be granted again after a restart.")
+                            .color(NamedTextColor.YELLOW));
+                }
+                if (reportUndelivered(sender, target, kitDelivery, "Last Sprint kit item(s)")) {
+                    return true;
+                }
                 sender.sendMessage(Component.text("Gave Last Sprint kit to ")
                         .color(NamedTextColor.GREEN)
                         .append(Component.text(target.getName()).color(NamedTextColor.AQUA))

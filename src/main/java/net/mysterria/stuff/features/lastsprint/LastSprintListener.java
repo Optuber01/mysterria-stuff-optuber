@@ -46,8 +46,8 @@ public class LastSprintListener implements Listener {
         // Delay 1 tick so the player is fully initialized before receiving items
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (!player.isOnline()) return;
+            if (lastSprint.hasReceivedGift(player.getUniqueId())) return;
 
-            boolean flagSaved = lastSprint.markGiftReceived(player.getUniqueId());
             List<ItemStack> kit = lastSprint.getRewardItems();
             int kitAmount = 0;
             for (ItemStack item : kit) {
@@ -60,12 +60,26 @@ public class LastSprintListener implements Listener {
             } catch (RuntimeException e) {
                 StuffAuditEmitter.emitDeliveryException("kit.granted", correlationId, "kit:last_sprint",
                         null, player.getUniqueId(), "first_join",
-                        autoGrantMetadata(player, kit.size(), kitAmount, flagSaved), e);
+                        autoGrantMetadata(player, kit.size(), kitAmount, false), e);
                 throw e;
             }
+            // Flag only once something actually reached the player: a fully blocked delivery is
+            // retried on the next join, while a partial one is not re-sent (it would duplicate items).
+            boolean anyDelivered = delivery.deliveredAmount() + delivery.droppedAmount() > 0;
+            boolean flagSaved = anyDelivered && lastSprint.markGiftReceived(player.getUniqueId());
             StuffAuditEmitter.emitDelivery("kit.granted", correlationId, "kit:last_sprint",
                     null, player.getUniqueId(), "first_join", delivery,
                     autoGrantMetadata(player, kit.size(), delivery.requestedAmount(), flagSaved));
+
+            if (!delivery.complete()) {
+                player.sendMessage(Component.text(anyDelivered
+                                ? "Part of your Last Sprint starter kit could not be delivered. Please contact staff."
+                                : "Your Last Sprint starter kit could not be delivered. Please contact staff.")
+                        .color(NamedTextColor.RED));
+                PrettyLogger.warn("Last Sprint kit for " + player.getName() + " was not fully delivered ("
+                        + delivery.undeliveredAmount() + " of " + delivery.requestedAmount() + " item(s) undelivered)");
+                return;
+            }
 
             player.showTitle(Title.title(
                     Component.text("Welcome to Mysterria!").color(ACCENT)
