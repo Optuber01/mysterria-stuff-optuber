@@ -172,8 +172,11 @@ public class MainCommand implements CommandExecutor {
         }
 
         if (MysterriaStuff.getInstance().getJoinMsgStore() != null) {
-            MysterriaStuff.getInstance().getJoinMsgStore().load();
-            PrettyLogger.info("Reloaded join/quit message store");
+            if (MysterriaStuff.getInstance().getJoinMsgStore().load()) {
+                PrettyLogger.info("Reloaded join/quit message store");
+            } else {
+                PrettyLogger.warn("Join/quit message store failed to reload; it stays read-only until the file loads");
+            }
         }
 
         sender.sendMessage(Component.text("MysterriaStuff reloaded successfully!")
@@ -801,14 +804,21 @@ public class MainCommand implements CommandExecutor {
                 return handleJoinMsgFirstJoin(sender, store, args);
             }
             case "reload" -> {
-                store.load();
+                if (!store.load()) {
+                    sender.sendMessage(Component.text("Reload failed; store is read-only until the file loads. Check console.")
+                            .color(NamedTextColor.RED));
+                    return true;
+                }
                 sender.sendMessage(Component.text("Join/quit message store reloaded from disk.")
                         .color(NamedTextColor.GREEN));
                 return true;
             }
             case "repair" -> {
                 int recovered = store.repairFromLegacyBackups();
-                if (recovered < 0) {
+                if (recovered == JoinMsgStore.REPAIR_SAVE_FAILED) {
+                    sender.sendMessage(Component.text("Failed to save the message store! Check console.")
+                            .color(NamedTextColor.RED));
+                } else if (recovered < 0) {
                     sender.sendMessage(Component.text("No join.rs.migrated/quit.rs.migrated backup files found — nothing to repair.")
                             .color(NamedTextColor.GRAY));
                 } else if (recovered == 0) {

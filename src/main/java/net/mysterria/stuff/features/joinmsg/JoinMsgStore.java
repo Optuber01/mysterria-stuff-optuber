@@ -119,7 +119,13 @@ public class JoinMsgStore {
         }
     }
 
-    public void load() {
+    /**
+     * Loads the store from disk.
+     *
+     * @return false if the store or legacy files could not be read; the previous in-memory
+     *         state is kept and saving is blocked until a later load succeeds
+     */
+    public boolean load() {
         File file = getStoreFile();
         StoreState loaded;
         if (!file.exists()) {
@@ -128,14 +134,14 @@ public class JoinMsgStore {
                 applyState(new StoreState());
                 loadFailed = false;
                 PrettyLogger.info("No join/quit message store found, starting fresh");
-                return;
+                return true;
             }
             loaded = migrateLegacyFormat(legacyDir);
         } else {
             loaded = readStoreFile(file);
         }
         if (loaded == null) {
-            return;
+            return false;
         }
 
         applyState(loaded);
@@ -145,6 +151,7 @@ public class JoinMsgStore {
                 + (pending.isEmpty() ? "" : ", " + pending.size() + " pending name match(es)")
                 + (defaultJoinMessage != null || defaultQuitMessage != null ? ", default message(s)" : "")
                 + (firstJoinMessage != null ? ", first-join message" : ""));
+        return true;
     }
 
     /**
@@ -359,8 +366,12 @@ public class JoinMsgStore {
      * incomplete in the current store. Never overwrites an existing non-null
      * join/quit message — only fills in gaps. Safe to run repeatedly.
      *
-     * @return number of entries added or filled in, or -1 if no backup files exist
+     * @return number of entries added or filled in, -1 if no backup files exist, or
+     *         {@link #REPAIR_SAVE_FAILED} if entries were found but could not be saved
+     *         (the in-memory store is rolled back in that case)
      */
+    public static final int REPAIR_SAVE_FAILED = -2;
+
     public int repairFromLegacyBackups() {
         File dir = findLegacyDir("join.rs.migrated", "quit.rs.migrated");
         if (dir == null) {
@@ -383,6 +394,9 @@ public class JoinMsgStore {
         names.addAll(legacyJoin.keySet());
         names.addAll(legacyQuit.keySet());
 
+        Map<UUID, MessageEntry> byUuidSnapshot = copyEntries(byUuid);
+        Map<String, MessageEntry> pendingSnapshot = copyEntries(pending);
+
         int recovered = 0;
         for (String name : names) {
             String join = legacyJoin.get(name);
@@ -401,8 +415,20 @@ public class JoinMsgStore {
             if (filled) recovered++;
         }
 
-        if (recovered > 0) save();
+        if (recovered > 0 && !save()) {
+            byUuid.clear();
+            byUuid.putAll(byUuidSnapshot);
+            pending.clear();
+            pending.putAll(pendingSnapshot);
+            return REPAIR_SAVE_FAILED;
+        }
         return recovered;
+    }
+
+    private static <K> Map<K, MessageEntry> copyEntries(Map<K, MessageEntry> entries) {
+        Map<K, MessageEntry> copy = new HashMap<>();
+        entries.forEach((key, entry) -> copy.put(key, copyEntry(entry)));
+        return copy;
     }
 
     private MessageEntry findByName(String name) {
