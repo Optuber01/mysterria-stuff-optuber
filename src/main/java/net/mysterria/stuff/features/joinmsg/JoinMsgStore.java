@@ -360,6 +360,8 @@ public class JoinMsgStore {
         return state;
     }
 
+    public static final int REPAIR_SAVE_FAILED = -2;
+
     /**
      * Re-imports entries from the pre-migration ".rs.migrated" backup files
      * (kept untouched by {@link #migrateLegacyFormat()}) that are missing or
@@ -370,8 +372,6 @@ public class JoinMsgStore {
      *         {@link #REPAIR_SAVE_FAILED} if entries were found but could not be saved
      *         (the in-memory store is rolled back in that case)
      */
-    public static final int REPAIR_SAVE_FAILED = -2;
-
     public int repairFromLegacyBackups() {
         File dir = findLegacyDir("join.rs.migrated", "quit.rs.migrated");
         if (dir == null) {

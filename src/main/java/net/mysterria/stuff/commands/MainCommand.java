@@ -1139,6 +1139,17 @@ public class MainCommand implements CommandExecutor {
                 }
                 List<ItemStack> kit = lastSprint.getRewardItems();
                 int kitAmount = totalAmount(kit);
+                // Flag before delivering so the first-join grant can never duplicate this kit.
+                if (!lastSprint.markGiftReceived(target.getUniqueId())) {
+                    emitStaffItemGrantFailed(sender, target, "kit.granted", "kit:last_sprint", "last_sprint_kit",
+                            kitAmount, "gift_flag_unsaved", Map.of("stack_count", kit.size(), "gift_flag_saved", false));
+                    PrettyLogger.warn("Last Sprint gift flag for " + target.getName()
+                            + " could not be saved; the kit was not delivered");
+                    sender.sendMessage(Component.text("Warning: the Last Sprint gift flag for " + target.getName()
+                                    + " could not be saved; the kit was not delivered.")
+                            .color(NamedTextColor.YELLOW));
+                    return true;
+                }
                 ItemDelivery.Result kitDelivery;
                 try {
                     kitDelivery = lastSprint.giveRewards(target, kit);
@@ -1146,19 +1157,11 @@ public class MainCommand implements CommandExecutor {
                     StuffAuditEmitter.emitDeliveryException("kit.granted", StuffAuditEmitter.correlationId(),
                             "kit:last_sprint", StuffAuditEmitter.actorId(sender), target.getUniqueId(),
                             "admin_give", staffGrantMetadata(target, "last_sprint_kit", kitAmount,
-                                    Map.of("stack_count", kit.size())), e);
+                                    Map.of("stack_count", kit.size(), "gift_flag_saved", true)), e);
                     throw e;
                 }
-                // Partially delivered kits are still flagged so the first-join grant cannot duplicate them.
-                boolean anyDelivered = kitDelivery.deliveredAmount() + kitDelivery.droppedAmount() > 0;
-                boolean flagSaved = anyDelivered && lastSprint.markGiftReceived(target.getUniqueId());
                 emitStaffItemGrant(sender, target, "kit.granted", "kit:last_sprint", "last_sprint_kit",
-                        kitDelivery, Map.of("stack_count", kit.size(), "gift_flag_saved", flagSaved));
-                if (anyDelivered && !flagSaved) {
-                    sender.sendMessage(Component.text("Warning: the Last Sprint gift flag for " + target.getName()
-                                    + " could not be saved; it may be granted again after a restart.")
-                            .color(NamedTextColor.YELLOW));
-                }
+                        kitDelivery, Map.of("stack_count", kit.size(), "gift_flag_saved", true));
                 if (reportUndelivered(sender, target, kitDelivery, "Last Sprint kit item(s)")) {
                     return true;
                 }

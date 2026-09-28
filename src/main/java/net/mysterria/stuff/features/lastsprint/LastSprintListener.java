@@ -54,22 +54,30 @@ public class LastSprintListener implements Listener {
                 if (item != null && !item.getType().isAir()) kitAmount += item.getAmount();
             }
             UUID correlationId = StuffAuditEmitter.correlationId();
+            // Flag before delivering so a kit can never be granted twice: if delivery throws or is
+            // partial, the flag stays set and the shortfall is reported instead of re-sent on next join.
+            if (!lastSprint.markGiftReceived(player.getUniqueId())) {
+                Map<String, Object> metadata = autoGrantMetadata(player, kit.size(), kitAmount, false);
+                metadata.put("failure", "gift_flag_unsaved");
+                StuffAuditEmitter.emitFailed("kit.granted", correlationId, "kit:last_sprint",
+                        null, player.getUniqueId(), null, "first_join", metadata);
+                PrettyLogger.warn("Last Sprint gift flag for " + player.getName()
+                        + " could not be saved; the kit was not delivered");
+                return;
+            }
             ItemDelivery.Result delivery;
             try {
                 delivery = lastSprint.giveRewards(player, kit);
             } catch (RuntimeException e) {
                 StuffAuditEmitter.emitDeliveryException("kit.granted", correlationId, "kit:last_sprint",
                         null, player.getUniqueId(), "first_join",
-                        autoGrantMetadata(player, kit.size(), kitAmount, false), e);
+                        autoGrantMetadata(player, kit.size(), kitAmount, true), e);
                 throw e;
             }
-            // Flag only once something actually reached the player: a fully blocked delivery is
-            // retried on the next join, while a partial one is not re-sent (it would duplicate items).
             boolean anyDelivered = delivery.deliveredAmount() + delivery.droppedAmount() > 0;
-            boolean flagSaved = anyDelivered && lastSprint.markGiftReceived(player.getUniqueId());
             StuffAuditEmitter.emitDelivery("kit.granted", correlationId, "kit:last_sprint",
                     null, player.getUniqueId(), "first_join", delivery,
-                    autoGrantMetadata(player, kit.size(), delivery.requestedAmount(), flagSaved));
+                    autoGrantMetadata(player, kit.size(), delivery.requestedAmount(), true));
 
             if (!delivery.complete()) {
                 player.sendMessage(Component.text(anyDelivered
