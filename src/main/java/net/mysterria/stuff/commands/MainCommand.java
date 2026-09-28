@@ -225,6 +225,9 @@ public class MainCommand implements CommandExecutor {
                         "item:reinforced_elytra", "reinforced_elytra", null);
                 emitStaffItemGrant(sender, target, "item.granted", "item:reinforced_elytra",
                         "reinforced_elytra", delivery, null);
+                if (reportUndelivered(sender, target, delivery, "reinforced elytra")) {
+                    return true;
+                }
 
                 sender.sendMessage(Component.text("Given ")
                         .color(NamedTextColor.GREEN)
@@ -481,7 +484,10 @@ public class MainCommand implements CommandExecutor {
 
 
             ItemStack token = tokenManager.createToken(amount);
-            giveStaffToken(sender, target, token, "universal", amount);
+            ItemDelivery.Result delivery = giveStaffToken(sender, target, token, "universal", amount);
+            if (reportUndelivered(sender, target, delivery, "Universal Token(s)")) {
+                return true;
+            }
 
 
             target.sendMessage(tokenManager.getMessage("token-received", "amount", String.valueOf(amount)));
@@ -549,7 +555,10 @@ public class MainCommand implements CommandExecutor {
 
 
         ItemStack token = manager.createToken(amount);
-        giveStaffToken(sender, target, token, "joinmsg", amount);
+        ItemDelivery.Result delivery = giveStaffToken(sender, target, token, "joinmsg", amount);
+        if (reportUndelivered(sender, target, delivery, "Join/Quit Message Token(s)")) {
+            return true;
+        }
 
 
         target.sendMessage(manager.getMessage("token-received", "amount", String.valueOf(amount)));
@@ -984,7 +993,21 @@ public class MainCommand implements CommandExecutor {
                 actorId, subjectId, null, reason, metadata);
     }
 
-    private void giveStaffToken(CommandSender sender, Player target, ItemStack token,
+    /**
+     * Tells staff when a grant did not fully reach the target (e.g. another plugin cancelled the drop).
+     *
+     * @return true if the delivery was incomplete and the caller must not report success
+     */
+    private boolean reportUndelivered(CommandSender sender, Player target, ItemDelivery.Result delivery,
+                                      String itemLabel) {
+        if (delivery.complete()) return false;
+        sender.sendMessage(Component.text(delivery.undeliveredAmount() + " of " + delivery.requestedAmount()
+                        + " " + itemLabel + " could not be delivered to " + target.getName() + "!")
+                .color(NamedTextColor.RED));
+        return true;
+    }
+
+    private ItemDelivery.Result giveStaffToken(CommandSender sender, Player target, ItemStack token,
                                 String tokenType, int amount) {
         // Tokens are fungible and stackable: never PDC-stamp them (see ItemIdentity); one row-only lot uuid per grant.
         UUID actorId = StuffAuditEmitter.actorId(sender);
@@ -1006,6 +1029,7 @@ public class MainCommand implements CommandExecutor {
         }
         StuffAuditEmitter.emitDelivery("token.granted", correlationId, businessId,
                 actorId, target.getUniqueId(), "admin_give", delivery, metadata);
+        return delivery;
     }
 
     /** Delivers a staff item grant (elytra); a thrown delivery records a FAILED row and is rethrown unchanged. */
