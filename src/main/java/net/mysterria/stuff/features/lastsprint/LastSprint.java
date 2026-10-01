@@ -86,8 +86,16 @@ public class LastSprint {
     }
 
     public boolean markGiftReceived(UUID uuid) {
-        giftedPlayers.add(uuid);
-        return save();
+        boolean added = giftedPlayers.add(uuid);
+        boolean saved = false;
+        try {
+            saved = save();
+            return saved;
+        } finally {
+            // Callers skip delivery when the flag is not persisted, so drop a flag this call added
+            // rather than suppress the undelivered kit. A previously saved flag is left untouched.
+            if (!saved && added) giftedPlayers.remove(uuid);
+        }
     }
 
     public void unmarkGiftReceived(UUID uuid) {
