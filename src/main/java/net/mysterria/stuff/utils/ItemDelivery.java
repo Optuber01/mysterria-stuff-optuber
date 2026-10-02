@@ -54,6 +54,11 @@ public final class ItemDelivery {
             return undeliveredAmount <= 0;
         }
 
+        /** True when at least one requested item reached the inventory or a valid ground drop. */
+        public boolean anyDelivered() {
+            return deliveredAmount + droppedAmount > 0;
+        }
+
         public Result plus(Result other) {
             List<String> uuids = new ArrayList<>(itemUuids);
             uuids.addAll(other.itemUuids);

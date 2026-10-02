@@ -119,13 +119,17 @@ public class JoinMsgStore {
         }
     }
 
+    public void load() {
+        tryLoad();
+    }
+
     /**
      * Loads the store from disk.
      *
      * @return false if the store or legacy files could not be read; the previous in-memory
      *         state is kept and saving is blocked until a later load succeeds
      */
-    public boolean load() {
+    public boolean tryLoad() {
         File file = getStoreFile();
         StoreState loaded;
         if (!file.exists()) {
@@ -364,7 +368,7 @@ public class JoinMsgStore {
 
     /**
      * Re-imports entries from the pre-migration ".rs.migrated" backup files
-     * (kept untouched by {@link #migrateLegacyFormat()}) that are missing or
+     * (kept untouched by {@link #migrateLegacyFormat(File)}) that are missing or
      * incomplete in the current store. Never overwrites an existing non-null
      * join/quit message — only fills in gaps. Safe to run repeatedly.
      *
@@ -627,7 +631,13 @@ public class JoinMsgStore {
         return SetResult.WRITE_ERROR;
     }
 
-    public RemoveResult removePlayerMessages(OfflinePlayer target, boolean removeJoin, boolean removeQuit) {
+    public boolean removePlayerMessages(OfflinePlayer target, boolean removeJoin, boolean removeQuit) {
+        RemoveResult result = tryRemovePlayerMessages(target, removeJoin, removeQuit);
+        return result.changed() && result.saved();
+    }
+
+    /** Like {@link #removePlayerMessages}, but reports a failed save (rolled back) separately from no-op. */
+    public RemoveResult tryRemovePlayerMessages(OfflinePlayer target, boolean removeJoin, boolean removeQuit) {
         UUID uuid = target.getUniqueId();
         String name = target.getName();
         String pendingKey = name == null ? null : sanitizeKey(name);
@@ -709,7 +719,13 @@ public class JoinMsgStore {
         return SetResult.WRITE_ERROR;
     }
 
-    public RemoveResult removePendingMessages(String name, boolean removeJoin, boolean removeQuit) {
+    public boolean removePendingMessages(String name, boolean removeJoin, boolean removeQuit) {
+        RemoveResult result = tryRemovePendingMessages(name, removeJoin, removeQuit);
+        return result.changed() && result.saved();
+    }
+
+    /** Like {@link #removePendingMessages}, but reports a failed save (rolled back) separately from no-op. */
+    public RemoveResult tryRemovePendingMessages(String name, boolean removeJoin, boolean removeQuit) {
         String key = sanitizeKey(name);
         MessageEntry previous = copyEntry(pending.get(key));
         MessageEntry entry = pending.get(key);

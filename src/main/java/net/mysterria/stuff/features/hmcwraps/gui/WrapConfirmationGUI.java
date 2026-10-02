@@ -197,9 +197,9 @@ public class WrapConfirmationGUI {
                     player.getUniqueId(), player.getUniqueId(), "universal_token_exchange", metadata, e);
             throw e;
         }
-        if ("dropped".equals(delivery.mode())) {
+        if (delivery.droppedAmount() > 0 && delivery.deliveredAmount() == 0) {
             player.sendMessage(Component.text("Inventory full! Wrapper dropped at your feet.", NamedTextColor.YELLOW));
-        } else if ("partial".equals(delivery.mode())) {
+        } else if (delivery.droppedAmount() > 0) {
             player.sendMessage(Component.text("Inventory had limited space! "
                     + delivery.deliveredAmount() + " wrapper item(s) were added and "
                     + delivery.droppedAmount() + " dropped at your feet.", NamedTextColor.YELLOW));
@@ -212,7 +212,7 @@ public class WrapConfirmationGUI {
             // Another plugin blocked the wrapper from entering the world; the token is already consumed.
             player.sendMessage(Component.text("Error: The wrap item could not be delivered.", NamedTextColor.RED));
             player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
-            if (delivery.deliveredAmount() + delivery.droppedAmount() == 0) {
+            if (!delivery.anyDelivered()) {
                 sendRefundOutcome(player, refundToken(player, correlationId, tokenUuid));
             }
             PrettyLogger.warn("Wrapper for wrap '" + wrap.getWrapName() + "' was not fully delivered to "

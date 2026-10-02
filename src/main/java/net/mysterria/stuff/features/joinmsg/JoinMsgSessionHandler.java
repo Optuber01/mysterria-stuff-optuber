@@ -224,12 +224,11 @@ public class JoinMsgSessionHandler implements Listener {
     public void handleConfirmation(Player player) {
         UUID playerId = player.getUniqueId();
 
-        if (!activeSessions.containsKey(playerId)) {
+        PlayerSession session = activeSessions.get(playerId);
+        if (session == null) {
             player.sendMessage(manager.getMessage("no-active-session"));
             return;
         }
-
-        PlayerSession session = activeSessions.get(playerId);
 
         if (session.getState() != SessionState.AWAITING_CONFIRMATION) {
             player.sendMessage(manager.getMessage("not-ready-to-confirm"));
@@ -295,14 +294,12 @@ public class JoinMsgSessionHandler implements Listener {
         UUID playerId = player.getUniqueId();
 
 
-        PlayerSession session = activeSessions.get(playerId);
+        // Single remove: the session is claimed once, so a token is refunded at most once per session.
+        PlayerSession session = activeSessions.remove(playerId);
         if (session == null) {
             player.sendMessage(manager.getMessage("no-active-session"));
             return;
         }
-
-
-        activeSessions.remove(playerId);
 
 
         ItemStack token = manager.createToken(1);
@@ -340,14 +337,13 @@ public class JoinMsgSessionHandler implements Listener {
     public void handleRestart(Player player) {
         UUID playerId = player.getUniqueId();
 
-        PlayerSession session = activeSessions.get(playerId);
+        PlayerSession session = activeSessions.remove(playerId);
         if (session == null) {
             player.sendMessage(manager.getMessage("no-active-session"));
             return;
         }
 
 
-        activeSessions.remove(playerId);
         player.sendMessage(manager.getMessage("session-restarted"));
 
 

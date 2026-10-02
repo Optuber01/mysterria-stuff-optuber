@@ -56,7 +56,7 @@ public class LastSprintListener implements Listener {
             UUID correlationId = StuffAuditEmitter.correlationId();
             // Flag before delivering so a kit can never be granted twice: if delivery throws or is
             // partial, the flag stays set and the shortfall is reported instead of re-sent on next join.
-            if (!lastSprint.markGiftReceived(player.getUniqueId())) {
+            if (!lastSprint.tryMarkGiftReceived(player.getUniqueId())) {
                 Map<String, Object> metadata = autoGrantMetadata(player, kit.size(), kitAmount, false);
                 metadata.put("failure", "gift_flag_unsaved");
                 StuffAuditEmitter.emitFailed("kit.granted", correlationId, "kit:last_sprint",
@@ -72,15 +72,17 @@ public class LastSprintListener implements Listener {
                 StuffAuditEmitter.emitDeliveryException("kit.granted", correlationId, "kit:last_sprint",
                         null, player.getUniqueId(), "first_join",
                         autoGrantMetadata(player, kit.size(), kitAmount, true), e);
+                player.sendMessage(Component.text("Your Last Sprint starter kit could not be delivered. Please contact staff.")
+                        .color(NamedTextColor.RED));
+                PrettyLogger.warn("Last Sprint kit delivery to " + player.getName() + " failed: " + e.getMessage());
                 throw e;
             }
-            boolean anyDelivered = delivery.deliveredAmount() + delivery.droppedAmount() > 0;
             StuffAuditEmitter.emitDelivery("kit.granted", correlationId, "kit:last_sprint",
                     null, player.getUniqueId(), "first_join", delivery,
                     autoGrantMetadata(player, kit.size(), delivery.requestedAmount(), true));
 
             if (!delivery.complete()) {
-                player.sendMessage(Component.text(anyDelivered
+                player.sendMessage(Component.text(delivery.anyDelivered()
                                 ? "Part of your Last Sprint starter kit could not be delivered. Please contact staff."
                                 : "Your Last Sprint starter kit could not be delivered. Please contact staff.")
                         .color(NamedTextColor.RED));

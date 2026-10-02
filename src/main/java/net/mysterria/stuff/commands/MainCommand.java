@@ -171,16 +171,24 @@ public class MainCommand implements CommandExecutor {
             PrettyLogger.info("Reloaded HMCWraps category mappings");
         }
 
+        boolean joinMsgStoreLoaded = true;
         if (MysterriaStuff.getInstance().getJoinMsgStore() != null) {
-            if (MysterriaStuff.getInstance().getJoinMsgStore().load()) {
+            joinMsgStoreLoaded = MysterriaStuff.getInstance().getJoinMsgStore().tryLoad();
+            if (joinMsgStoreLoaded) {
                 PrettyLogger.info("Reloaded join/quit message store");
             } else {
                 PrettyLogger.warn("Join/quit message store failed to reload; it stays read-only until the file loads");
             }
         }
 
-        sender.sendMessage(Component.text("MysterriaStuff reloaded successfully!")
-                .color(NamedTextColor.GREEN));
+        if (joinMsgStoreLoaded) {
+            sender.sendMessage(Component.text("MysterriaStuff reloaded successfully!")
+                    .color(NamedTextColor.GREEN));
+        } else {
+            sender.sendMessage(Component.text("MysterriaStuff reloaded, but the join/quit message store failed to load "
+                            + "and stays read-only until it does. Check console.")
+                    .color(NamedTextColor.RED));
+        }
         PrettyLogger.success("Plugin reloaded by " + sender.getName());
         return true;
     }
@@ -758,8 +766,8 @@ public class MainCommand implements CommandExecutor {
                 }
 
                 JoinMsgStore.RemoveResult removal = target != null
-                        ? store.removePlayerMessages(target, removeJoin, removeQuit)
-                        : store.removePendingMessages(args[2], removeJoin, removeQuit);
+                        ? store.tryRemovePlayerMessages(target, removeJoin, removeQuit)
+                        : store.tryRemovePendingMessages(args[2], removeJoin, removeQuit);
                 String label = target != null ? displayName(target) : args[2];
                 if (removal.changed() && !removal.saved()) {
                     sender.sendMessage(Component.text("Failed to save the message store! Check console.")
@@ -813,7 +821,7 @@ public class MainCommand implements CommandExecutor {
                 return handleJoinMsgFirstJoin(sender, store, args);
             }
             case "reload" -> {
-                if (!store.load()) {
+                if (!store.tryLoad()) {
                     sender.sendMessage(Component.text("Reload failed; store is read-only until the file loads. Check console.")
                             .color(NamedTextColor.RED));
                     return true;
@@ -1140,7 +1148,7 @@ public class MainCommand implements CommandExecutor {
                 List<ItemStack> kit = lastSprint.getRewardItems();
                 int kitAmount = totalAmount(kit);
                 // Flag before delivering so the first-join grant can never duplicate this kit.
-                if (!lastSprint.markGiftReceived(target.getUniqueId())) {
+                if (!lastSprint.tryMarkGiftReceived(target.getUniqueId())) {
                     emitStaffItemGrantFailed(sender, target, "kit.granted", "kit:last_sprint", "last_sprint_kit",
                             kitAmount, "gift_flag_unsaved", Map.of("stack_count", kit.size(), "gift_flag_saved", false));
                     PrettyLogger.warn("Last Sprint gift flag for " + target.getName()

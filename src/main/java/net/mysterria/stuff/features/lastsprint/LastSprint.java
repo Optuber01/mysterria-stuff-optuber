@@ -85,7 +85,16 @@ public class LastSprint {
         return giftedPlayers.contains(uuid);
     }
 
-    public boolean markGiftReceived(UUID uuid) {
+    public void markGiftReceived(UUID uuid) {
+        tryMarkGiftReceived(uuid);
+    }
+
+    /**
+     * Flags the player as gifted and persists the flag.
+     *
+     * @return false if the flag could not be saved; callers must not deliver the kit in that case
+     */
+    public boolean tryMarkGiftReceived(UUID uuid) {
         boolean added = giftedPlayers.add(uuid);
         boolean saved = false;
         try {
@@ -120,6 +129,10 @@ public class LastSprint {
 
     public int getRewardCount() {
         return rewardItems.size();
+    }
+
+    public void giveRewards(Player player) {
+        giveRewards(player, getRewardItems());
     }
 
     /** Delivers a snapshot of the reward kit (see {@link #getRewardItems()}) to the player. */
