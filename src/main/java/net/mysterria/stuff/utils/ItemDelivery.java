@@ -8,11 +8,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Single delivery path for items handed to a player: inventory first, leftovers dropped at the
- * player's feet. The requested amount is snapshotted before {@code Inventory.addItem}, which may
- * mutate the passed stack. A leftover only counts as dropped when the spawned item entity is
- * still valid (another plugin may cancel {@code ItemSpawnEvent}); otherwise it is counted as
- * undelivered.
+ * Gives items to a player: inventory first, leftovers dropped at their feet. A drop only counts
+ * when the item entity is still valid, since another plugin may cancel the spawn.
  */
 public final class ItemDelivery {
 
@@ -25,12 +22,10 @@ public final class ItemDelivery {
             return new Result(0, 0, 0, 0);
         }
 
-        /** True when every requested item reached the inventory or a valid ground drop. */
         public boolean complete() {
             return undeliveredAmount <= 0;
         }
 
-        /** True when at least one requested item reached the inventory or a valid ground drop. */
         public boolean anyDelivered() {
             return deliveredAmount + droppedAmount > 0;
         }
@@ -46,11 +41,7 @@ public final class ItemDelivery {
         return deliver(player, item, false);
     }
 
-    /**
-     * Elytra / Last Sprint kit semantics: when the inventory has no empty slot the whole stack is
-     * dropped (it is not merged into matching partial stacks). Overflow from a partial add is
-     * dropped rather than discarded.
-     */
+    /** Like {@link #deliver}, but with no empty slot the whole stack is dropped instead of merged into partial stacks. */
     public static Result deliverOrDropWhenFull(Player player, ItemStack item) {
         return deliver(player, item, true);
     }
@@ -82,7 +73,6 @@ public final class ItemDelivery {
         return dropped != null && dropped.isValid() && !dropped.isDead();
     }
 
-    /** Last Sprint kit delivery, one stack at a time with {@link #deliverOrDropWhenFull} semantics. */
     public static Result deliverAll(Player player, List<ItemStack> items) {
         Result total = Result.empty();
         for (ItemStack item : items) {

@@ -67,7 +67,6 @@ public class JoinMsgSessionHandler implements Listener {
         UUID playerId = player.getUniqueId();
 
 
-        // Single lookup: a containsKey/get pair could straddle a main-thread removal and yield null.
         PlayerSession session = activeSessions.get(playerId);
         if (session == null) {
             return;
@@ -81,7 +80,7 @@ public class JoinMsgSessionHandler implements Listener {
 
 
         plugin.getServer().getScheduler().runTask(plugin, () -> {
-            // Revalidate on the main thread: the session may have been cancelled or replaced meanwhile.
+            // The session may have been cancelled or replaced in the meantime.
             if (activeSessions.get(playerId) != session) return;
             processSessionMessage(player, session, message);
         });
@@ -229,9 +228,6 @@ public class JoinMsgSessionHandler implements Listener {
         }
 
 
-        activeSessions.remove(playerId);
-
-
         player.sendMessage(manager.getMessage("processing"));
 
         JoinMsgStore.SetResult result = store.setPlayerMessages(
@@ -241,15 +237,16 @@ public class JoinMsgSessionHandler implements Listener {
         );
 
         switch (result) {
-            case OK -> player.sendMessage(manager.getMessage("success"));
+            case OK -> {
+                activeSessions.remove(playerId);
+                player.sendMessage(manager.getMessage("success"));
+            }
             case MISSING_PLACEHOLDER_JOIN -> player.sendMessage(manager.getMessage("join-missing-placeholder"));
             case MISSING_PLACEHOLDER_QUIT -> player.sendMessage(manager.getMessage("quit-missing-placeholder"));
             case WRITE_ERROR -> player.sendMessage(manager.getMessage("write-error"));
         }
         if (result != JoinMsgStore.SetResult.OK) {
-            // The token was consumed when the session started: keep the session so the player can
-            // retry the confirmation or cancel for a refund instead of losing the token.
-            activeSessions.putIfAbsent(playerId, session);
+            // The token is already spent: keep the session so the player can retry or cancel for a refund.
             player.sendMessage(Component.empty());
             sendCancelButton(player);
             sendRestartButton(player);
@@ -261,7 +258,7 @@ public class JoinMsgSessionHandler implements Listener {
         UUID playerId = player.getUniqueId();
 
 
-        // Single remove: the session is claimed once, so a token is refunded at most once per session.
+        // Removing the session is what claims the refund, so it can only be paid once.
         if (activeSessions.remove(playerId) == null) {
             player.sendMessage(manager.getMessage("no-active-session"));
             return;

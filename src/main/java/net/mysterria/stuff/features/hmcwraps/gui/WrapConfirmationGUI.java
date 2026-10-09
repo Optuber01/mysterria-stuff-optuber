@@ -122,53 +122,48 @@ public class WrapConfirmationGUI {
             return;
         }
 
-        ItemStack wrapperItem;
-        boolean tagged;
+        ItemStack wrapperItem = null;
         try {
             if (wrap.getPhysical() == null) {
                 player.sendMessage(Component.text("Error: This wrap has no physical item configured.", NamedTextColor.RED));
                 player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
                 PrettyLogger.warn("Wrap '" + wrap.getWrapName() + "' has null physical item during exchange");
 
-                sendRefundOutcome(player, refundToken(player));
+                refundToken(player);
                 return;
             }
             wrapperItem = wrap.getPhysical().toItem(hmcWraps, player);
 
 
-            tagged = addWrapperPDC(wrapperItem, wrap, hmcWraps);
+            // HMCWraps does not recognise a wrapper without the tag
+            if (!addWrapperPDC(wrapperItem, wrap, hmcWraps)) {
+                wrapperItem = null;
+            }
         } catch (Exception e) {
             PrettyLogger.warn("Failed to get physical item for wrap '" + wrap.getWrapName() + "' during exchange: " + e.getMessage());
-            abortCreation(player, wrap);
-            return;
         }
 
-        if (!tagged) {
-            // Untagged wrappers are not recognised by HMCWraps: refund instead of handing out a dead item.
-            abortCreation(player, wrap);
+        if (wrapperItem == null) {
+            player.sendMessage(Component.text("Error: Failed to create wrap item.", NamedTextColor.RED));
+            player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
+            refundToken(player);
             return;
         }
 
         ItemDelivery.Result delivery = ItemDelivery.deliver(player, wrapperItem);
-        if (delivery.droppedAmount() > 0 && delivery.deliveredAmount() == 0) {
-            player.sendMessage(Component.text("Inventory full! Wrapper dropped at your feet.", NamedTextColor.YELLOW));
-        } else if (delivery.droppedAmount() > 0) {
-            player.sendMessage(Component.text("Inventory had limited space! "
-                    + delivery.deliveredAmount() + " wrapper item(s) were added and "
-                    + delivery.droppedAmount() + " dropped at your feet.", NamedTextColor.YELLOW));
-        }
-
         if (!delivery.complete()) {
-            // Another plugin blocked the wrapper from entering the world; the token is already consumed.
+            // Another plugin blocked the drop and the token is already consumed.
             player.sendMessage(Component.text("Error: The wrap item could not be delivered.", NamedTextColor.RED));
             player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
+            PrettyLogger.warn("Wrapper for wrap '" + wrap.getWrapName() + "' could not be delivered to " + player.getName());
             if (!delivery.anyDelivered()) {
-                sendRefundOutcome(player, refundToken(player));
+                refundToken(player);
             }
-            PrettyLogger.warn("Wrapper for wrap '" + wrap.getWrapName() + "' was not fully delivered to "
-                    + player.getName() + " (" + delivery.undeliveredAmount() + " of "
-                    + delivery.requestedAmount() + " undelivered)");
             return;
+        }
+
+        if (delivery.droppedAmount() > 0) {
+            player.sendMessage(Component.text("Inventory full! Wrapper dropped at your feet.", NamedTextColor.YELLOW));
         }
 
         String wrapName = wrap.getName();
@@ -177,19 +172,8 @@ public class WrapConfirmationGUI {
         PrettyLogger.debug(player.getName() + " exchanged a token for wrap: " + wrapName);
     }
 
-    /** Wrapper creation failed after the token was consumed: existing error text, then a refund. */
-    private void abortCreation(Player player, Wrap wrap) {
-        player.sendMessage(Component.text("Error: Failed to create wrap item.", NamedTextColor.RED));
-        player.sendMessage(Component.text("Please contact staff about wrap: " + wrap.getWrapName(), NamedTextColor.YELLOW));
-        sendRefundOutcome(player, refundToken(player));
-    }
-
-    private ItemDelivery.Result refundToken(Player player) {
-        return ItemDelivery.deliver(player, manager.createToken(1));
-    }
-
-    private void sendRefundOutcome(Player player, ItemDelivery.Result refund) {
-        if (refund.complete()) {
+    private void refundToken(Player player) {
+        if (ItemDelivery.deliver(player, manager.createToken(1)).complete()) {
             player.sendMessage(Component.text("Your token has been refunded.", NamedTextColor.GREEN));
         } else {
             player.sendMessage(Component.text("Your token refund could not be delivered. Please contact staff.",
@@ -198,7 +182,7 @@ public class WrapConfirmationGUI {
         }
     }
 
-    /** @return false if the wrapper could not be tagged, so HMCWraps would not recognise it */
+    /** @return false if the wrapper could not be tagged */
     private boolean addWrapperPDC(ItemStack item, Wrap wrap, HMCWraps hmcWraps) {
         ItemMeta meta = item.getItemMeta();
         if (meta == null) {

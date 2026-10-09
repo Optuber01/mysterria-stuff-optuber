@@ -166,24 +166,17 @@ public class MainCommand implements CommandExecutor {
             PrettyLogger.info("Reloaded HMCWraps category mappings");
         }
 
-        boolean joinMsgStoreLoaded = true;
         if (MysterriaStuff.getInstance().getJoinMsgStore() != null) {
-            joinMsgStoreLoaded = MysterriaStuff.getInstance().getJoinMsgStore().tryLoad();
-            if (joinMsgStoreLoaded) {
-                PrettyLogger.info("Reloaded join/quit message store");
-            } else {
-                PrettyLogger.warn("Join/quit message store failed to reload; it stays read-only until the file loads");
+            if (!MysterriaStuff.getInstance().getJoinMsgStore().tryLoad()) {
+                sender.sendMessage(Component.text("MysterriaStuff reloaded, but the join/quit message store failed to load. Check console.")
+                        .color(NamedTextColor.RED));
+                return true;
             }
+            PrettyLogger.info("Reloaded join/quit message store");
         }
 
-        if (joinMsgStoreLoaded) {
-            sender.sendMessage(Component.text("MysterriaStuff reloaded successfully!")
-                    .color(NamedTextColor.GREEN));
-        } else {
-            sender.sendMessage(Component.text("MysterriaStuff reloaded, but the join/quit message store failed to load "
-                            + "and stays read-only until it does. Check console.")
-                    .color(NamedTextColor.RED));
-        }
+        sender.sendMessage(Component.text("MysterriaStuff reloaded successfully!")
+                .color(NamedTextColor.GREEN));
         PrettyLogger.success("Plugin reloaded by " + sender.getName());
         return true;
     }
@@ -932,11 +925,7 @@ public class MainCommand implements CommandExecutor {
         return player.getName() != null ? player.getName() : player.getUniqueId().toString();
     }
 
-    /**
-     * Tells staff when a grant did not fully reach the target (e.g. another plugin cancelled the drop).
-     *
-     * @return true if the delivery was incomplete and the caller must not report success
-     */
+    /** @return true (after telling staff) if part of the grant was not delivered, so the caller must not report success */
     private boolean reportUndelivered(CommandSender sender, Player target, ItemDelivery.Result delivery,
                                       String itemLabel) {
         if (delivery.complete()) return false;
@@ -1003,8 +992,6 @@ public class MainCommand implements CommandExecutor {
                 List<ItemStack> kit = lastSprint.getRewardItems();
                 // Flag before delivering so the first-join grant can never duplicate this kit.
                 if (!lastSprint.tryMarkGiftReceived(target.getUniqueId())) {
-                    PrettyLogger.warn("Last Sprint gift flag for " + target.getName()
-                            + " could not be saved; the kit was not delivered");
                     sender.sendMessage(Component.text("Warning: the Last Sprint gift flag for " + target.getName()
                                     + " could not be saved; the kit was not delivered.")
                             .color(NamedTextColor.YELLOW));

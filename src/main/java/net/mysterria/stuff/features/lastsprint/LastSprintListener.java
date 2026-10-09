@@ -41,30 +41,20 @@ public class LastSprintListener implements Listener {
         // Delay 1 tick so the player is fully initialized before receiving items
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (!player.isOnline()) return;
+            // A quick relog can queue this task twice, so check the flag again.
             if (lastSprint.hasReceivedGift(player.getUniqueId())) return;
 
             List<ItemStack> kit = lastSprint.getRewardItems();
-            // Flag before delivering so a kit can never be granted twice: if delivery throws or is
-            // partial, the flag stays set and the shortfall is reported instead of re-sent on next join.
+            // Flag before delivering so the kit can never be granted twice.
             if (!lastSprint.tryMarkGiftReceived(player.getUniqueId())) {
                 PrettyLogger.warn("Last Sprint gift flag for " + player.getName()
                         + " could not be saved; the kit was not delivered");
                 return;
             }
-            ItemDelivery.Result delivery;
-            try {
-                delivery = lastSprint.giveRewards(player, kit);
-            } catch (RuntimeException e) {
-                player.sendMessage(Component.text("Your Last Sprint starter kit could not be delivered. Please contact staff.")
-                        .color(NamedTextColor.RED));
-                PrettyLogger.warn("Last Sprint kit delivery to " + player.getName() + " failed: " + e.getMessage());
-                throw e;
-            }
+            ItemDelivery.Result delivery = lastSprint.giveRewards(player, kit);
 
             if (!delivery.complete()) {
-                player.sendMessage(Component.text(delivery.anyDelivered()
-                                ? "Part of your Last Sprint starter kit could not be delivered. Please contact staff."
-                                : "Your Last Sprint starter kit could not be delivered. Please contact staff.")
+                player.sendMessage(Component.text("Your Last Sprint starter kit could not be fully delivered. Please contact staff.")
                         .color(NamedTextColor.RED));
                 PrettyLogger.warn("Last Sprint kit for " + player.getName() + " was not fully delivered ("
                         + delivery.undeliveredAmount() + " of " + delivery.requestedAmount() + " item(s) undelivered)");

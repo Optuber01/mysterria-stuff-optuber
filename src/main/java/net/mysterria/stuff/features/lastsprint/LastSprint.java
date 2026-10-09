@@ -86,25 +86,16 @@ public class LastSprint {
     }
 
     public void markGiftReceived(UUID uuid) {
-        tryMarkGiftReceived(uuid);
+        giftedPlayers.add(uuid);
+        save();
     }
 
-    /**
-     * Flags the player as gifted and persists the flag.
-     *
-     * @return false if the flag could not be saved; callers must not deliver the kit in that case
-     */
+    /** @return false if the flag could not be saved; callers must not deliver the kit then */
     public boolean tryMarkGiftReceived(UUID uuid) {
         boolean added = giftedPlayers.add(uuid);
-        boolean saved = false;
-        try {
-            saved = save();
-            return saved;
-        } finally {
-            // Callers skip delivery when the flag is not persisted, so drop a flag this call added
-            // rather than suppress the undelivered kit. A previously saved flag is left untouched.
-            if (!saved && added) giftedPlayers.remove(uuid);
-        }
+        if (save()) return true;
+        if (added) giftedPlayers.remove(uuid);
+        return false;
     }
 
     public void unmarkGiftReceived(UUID uuid) {
@@ -131,11 +122,6 @@ public class LastSprint {
         return rewardItems.size();
     }
 
-    public void giveRewards(Player player) {
-        giveRewards(player, getRewardItems());
-    }
-
-    /** Delivers a snapshot of the reward kit (see {@link #getRewardItems()}) to the player. */
     public ItemDelivery.Result giveRewards(Player player, List<ItemStack> kit) {
         return ItemDelivery.deliverAll(player, kit);
     }
