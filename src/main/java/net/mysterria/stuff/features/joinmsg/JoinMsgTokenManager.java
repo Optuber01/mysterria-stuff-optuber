@@ -86,7 +86,7 @@ public class JoinMsgTokenManager {
 
 
     public boolean consumeToken(ItemStack item, int amount) {
-        if (!isToken(item)) {
+        if (amount <= 0 || !isToken(item)) {
             return false;
         }
 

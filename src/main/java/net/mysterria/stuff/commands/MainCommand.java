@@ -997,7 +997,16 @@ public class MainCommand implements CommandExecutor {
                             .color(NamedTextColor.YELLOW));
                     return true;
                 }
-                ItemDelivery.Result kitDelivery = lastSprint.giveRewards(target, kit);
+                ItemDelivery.Result kitDelivery;
+                try {
+                    kitDelivery = lastSprint.giveRewards(target, kit);
+                } catch (RuntimeException e) {
+                    sender.sendMessage(Component.text("Last Sprint kit delivery to " + target.getName()
+                                    + " failed: " + e + ". The gift flag is set; use /mystuff lastsprint reset to allow another try.")
+                            .color(NamedTextColor.RED));
+                    PrettyLogger.error("Last Sprint kit delivery to " + target.getName() + " failed: " + e);
+                    return true;
+                }
                 if (reportUndelivered(sender, target, kitDelivery, "Last Sprint kit item(s)")) {
                     return true;
                 }

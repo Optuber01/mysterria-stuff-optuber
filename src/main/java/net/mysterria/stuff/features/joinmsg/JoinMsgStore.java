@@ -92,6 +92,18 @@ public class JoinMsgStore {
      *         blocked until a later load succeeds
      */
     public boolean tryLoad() {
+        Snapshot before = snapshot();
+        try {
+            return readFromDisk();
+        } catch (RuntimeException e) {
+            restore(before);
+            loadFailed = true;
+            PrettyLogger.warn("Failed to load join/quit message store, refusing to overwrite it: " + e);
+            return false;
+        }
+    }
+
+    private boolean readFromDisk() {
         File file = getStoreFile();
         if (file.exists()) {
             // loadConfiguration() swallows parse errors and returns an empty config, which would
@@ -178,7 +190,12 @@ public class JoinMsgStore {
             PrettyLogger.warn("Refusing to save join/quit message store: the files on disk failed to load");
             return false;
         }
-        return write();
+        try {
+            return write();
+        } catch (RuntimeException e) {
+            PrettyLogger.warn("Failed to save join/quit message store: " + e);
+            return false;
+        }
     }
 
     private boolean write() {
@@ -538,8 +555,8 @@ public class JoinMsgStore {
 
         MessageEntry entry = byUuid.get(target.getUniqueId());
         if (entry != null) {
-            if (removeJoin) { entry.join = null; changed = true; }
-            if (removeQuit) { entry.quit = null; changed = true; }
+            if (removeJoin && entry.join != null) { entry.join = null; changed = true; }
+            if (removeQuit && entry.quit != null) { entry.quit = null; changed = true; }
             if (entry.join == null && entry.quit == null) {
                 byUuid.remove(target.getUniqueId());
             }
@@ -548,8 +565,8 @@ public class JoinMsgStore {
         String name = target.getName();
         MessageEntry pend = name != null ? pending.get(sanitizeKey(name)) : null;
         if (pend != null) {
-            if (removeJoin) { pend.join = null; changed = true; }
-            if (removeQuit) { pend.quit = null; changed = true; }
+            if (removeJoin && pend.join != null) { pend.join = null; changed = true; }
+            if (removeQuit && pend.quit != null) { pend.quit = null; changed = true; }
             if (pend.join == null && pend.quit == null) {
                 pending.remove(sanitizeKey(name));
             }
@@ -672,6 +689,11 @@ public class JoinMsgStore {
     /** Saves the store; if that fails, puts the in-memory state back so it matches the file again. */
     private boolean saveOrRestore(Snapshot before) {
         if (save()) return true;
+        restore(before);
+        return false;
+    }
+
+    private void restore(Snapshot before) {
         byUuid.clear();
         byUuid.putAll(before.byUuid());
         pending.clear();
@@ -679,7 +701,6 @@ public class JoinMsgStore {
         defaultJoinMessage = before.defaultJoin();
         defaultQuitMessage = before.defaultQuit();
         firstJoinMessage = before.firstJoin();
-        return false;
     }
 
     /**

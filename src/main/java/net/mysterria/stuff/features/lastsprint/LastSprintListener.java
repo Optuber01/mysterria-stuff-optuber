@@ -51,7 +51,15 @@ public class LastSprintListener implements Listener {
                         + " could not be saved; the kit was not delivered");
                 return;
             }
-            ItemDelivery.Result delivery = lastSprint.giveRewards(player, kit);
+            ItemDelivery.Result delivery;
+            try {
+                delivery = lastSprint.giveRewards(player, kit);
+            } catch (RuntimeException e) {
+                player.sendMessage(Component.text("Your Last Sprint starter kit could not be delivered. Please contact staff.")
+                        .color(NamedTextColor.RED));
+                PrettyLogger.error("Last Sprint kit delivery for " + player.getName() + " failed: " + e);
+                return;
+            }
 
             if (!delivery.complete()) {
                 player.sendMessage(Component.text("Your Last Sprint starter kit could not be fully delivered. Please contact staff.")
